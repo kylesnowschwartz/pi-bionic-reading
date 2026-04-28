@@ -72,9 +72,13 @@ describe("bionicifyText", () => {
 	});
 
 	it("treats hyphenated words as one unit", () => {
-		// "well-known" length 10 at fixation 3: bold = 5
+		// "well-known" length 10 at fixation 3: raw bold = 5, but that lands
+		// on the `-` joiner and would emit `**well-**known` — a CommonMark
+		// right-flanking violation that renders as literal asterisks. The
+		// boundary is nudged inward to 4 so the closing `**` lands between
+		// the letter `l` and the `-`, which closes cleanly.
 		expect(bionicifyText("well-known issue", { fixation: 3 })).toBe(
-			"**well-**known **iss**ue",
+			"**well**-known **iss**ue",
 		);
 	});
 
@@ -135,6 +139,41 @@ describe("bionicifyText", () => {
 		// "line" len 4 → bold 2; "one"/"two" len 3 → bold 1.
 		const out = bionicifyText("line one\nline two", { fixation: 3 });
 		expect(out).toBe("**li**ne **o**ne\n**li**ne **t**wo");
+	});
+
+	describe("hyphen/apostrophe boundary safety", () => {
+		// CommonMark right-flanking rule: a closing `**` preceded by
+		// punctuation (`-` or `'`) and followed by a letter is not
+		// right-flanking, so the markers leak as literal asterisks. The
+		// transform must shift the bold boundary inward to the previous
+		// letter so the closing `**` lands between letter and joiner.
+
+		it("does not split `pipefail-sensitive` at the hyphen (fixation 3)", () => {
+			// Without the fix this would emit `**pipefail-**sensitive`.
+			const out = bionicifyText("pipefail-sensitive", { fixation: 3 });
+			expect(out).toBe("**pipefail**-sensitive");
+			expect(out).not.toContain("-**");
+		});
+
+		it("does not split on apostrophe-then-letter", () => {
+			// Hypothetical hyphen+apostrophe joined word.
+			// `let's-go` len 7, fixation 3 → bold 4 lands on `'`. Nudge to 3.
+			const out = bionicifyText("let's-go", { fixation: 3 });
+			expect(out).not.toMatch(/'\*\*[a-z]/);
+		});
+
+		it("keeps short hyphenated words renderable", () => {
+			// `well-known` len 10, fixation 3 → bold 5 lands on `-`. Nudge to 4.
+			const out = bionicifyText("well-known", { fixation: 3 });
+			expect(out).toBe("**well**-known");
+		});
+
+		it("leaves clean letter-letter boundaries alone", () => {
+			// `tic-tac-toe` len 11, fixation 3 → bold 6, lands on `a`/`c`.
+			// No nudge needed.
+			const out = bionicifyText("tic-tac-toe", { fixation: 3 });
+			expect(out).toBe("**tic-ta**c-toe");
+		});
 	});
 
 	it("uses fixation 3 by default", () => {

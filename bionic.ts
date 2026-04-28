@@ -134,7 +134,25 @@ export function bionicifyText(text: string, opts: BionicOptions = {}): string {
 			continue;
 		}
 
-		const bold = getBoldLength(word, fixation);
+		let bold = getBoldLength(word, fixation);
+
+		// Nudge the bold boundary off of `-` or `'` joiners.
+		//
+		// WORD_RE keeps tokens like `pipefail-sensitive` and `let's-go` as
+		// single words, so the split can land such that the prefix ends in
+		// a hyphen or apostrophe (e.g. `**pipefail-**sensitive`). CommonMark's
+		// right-flanking rule then prevents the closing `**` from closing:
+		// preceded by punctuation, followed by a letter, not right-flanking,
+		// renders as literal asterisks.
+		//
+		// Shifting `bold` inward by one lands the closing `**` between a
+		// letter and the joiner (`**pipefail**-sensitive`), which IS
+		// right-flanking and renders correctly. Word tokens always start
+		// with a letter/digit per WORD_RE, so this loop can't undershoot to 0.
+		while (bold > 0 && (word[bold - 1] === "-" || word[bold - 1] === "'")) {
+			bold--;
+		}
+
 		if (bold <= 0) {
 			result += word;
 		} else if (bold >= word.length) {
