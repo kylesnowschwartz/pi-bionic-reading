@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { bionicifyMarkdown, findForbiddenRanges } from "../transform.js";
+import { bionicifyMarkdown, findPreservedRanges } from "../transform.js";
 
-describe("findForbiddenRanges", () => {
+describe("findPreservedRanges", () => {
 	it("identifies fenced code blocks", () => {
 		const src = "before\n```js\nconst x = 1;\n```\nafter";
-		const ranges = findForbiddenRanges(src);
+		const ranges = findPreservedRanges(src);
 		const blockStart = src.indexOf("```js");
 		const blockEnd = src.lastIndexOf("```") + 3;
 		const matched = ranges.find(
@@ -15,31 +15,31 @@ describe("findForbiddenRanges", () => {
 
 	it("identifies tilde-fenced code blocks", () => {
 		const src = "~~~\ncode\n~~~";
-		const ranges = findForbiddenRanges(src);
+		const ranges = findPreservedRanges(src);
 		expect(ranges.some((r) => r.start === 0)).toBe(true);
 	});
 
 	it("identifies inline codespans", () => {
 		const src = "Use `foo` not `bar`.";
-		const ranges = findForbiddenRanges(src);
+		const ranges = findPreservedRanges(src);
 		expect(ranges.some((r) => r.start === 4 && r.end === 9)).toBe(true);
 		expect(ranges.some((r) => r.start === 14 && r.end === 19)).toBe(true);
 	});
 
 	it("identifies link URLs but leaves the link text transformable", () => {
 		const src = "click [here](https://example.com) now";
-		const ranges = findForbiddenRanges(src);
+		const ranges = findPreservedRanges(src);
 		const start = src.indexOf("(https");
 		const end = src.indexOf(")", start) + 1;
 		expect(ranges.some((r) => r.start === start && r.end === end)).toBe(true);
-		// "[here]" range is NOT in forbidden list (start at index of '[')
+		// "[here]" range is NOT in preserved list (start at index of '[')
 		const bracketStart = src.indexOf("[here]");
 		expect(ranges.every((r) => r.start !== bracketStart)).toBe(true);
 	});
 
 	it("identifies autolinks", () => {
 		const src = "see <https://foo.com> please";
-		const ranges = findForbiddenRanges(src);
+		const ranges = findPreservedRanges(src);
 		const start = src.indexOf("<https");
 		const end = src.indexOf(">", start) + 1;
 		expect(ranges.some((r) => r.start === start && r.end === end)).toBe(true);
@@ -47,7 +47,7 @@ describe("findForbiddenRanges", () => {
 
 	it("identifies HTML tags and comments", () => {
 		const src = "before <span>x</span> <!-- note --> after";
-		const ranges = findForbiddenRanges(src);
+		const ranges = findPreservedRanges(src);
 		expect(ranges.some((r) => src.slice(r.start, r.end) === "<span>")).toBe(
 			true,
 		);
@@ -61,7 +61,7 @@ describe("findForbiddenRanges", () => {
 
 	it("identifies link reference definitions on their own line", () => {
 		const src = "para text\n\n[foo]: https://example.com\n\nmore text";
-		const ranges = findForbiddenRanges(src);
+		const ranges = findPreservedRanges(src);
 		const start = src.indexOf("[foo]:");
 		expect(ranges.some((r) => r.start === start)).toBe(true);
 	});
@@ -180,7 +180,7 @@ Then visit [the docs](https://example.com/docs) for more.`;
 		expect(out).toContain("**b**ug");
 	});
 
-	it("does not introduce backticks or asterisks inside forbidden spans", () => {
+	it("does not introduce backticks or asterisks inside preserved spans", () => {
 		const src = "Run `echo hello world` to print";
 		const out = bionicifyMarkdown(src, { fixation: 3 });
 		// The inside of the codespan has the original content untouched

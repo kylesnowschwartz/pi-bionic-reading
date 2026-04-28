@@ -2,7 +2,7 @@
  * Markdown-aware bionic transform.
  *
  * Operates directly on the markdown source string using regex-based span
- * detection. We identify "forbidden" character ranges (code blocks, codespans,
+ * detection. We identify "preserved" character ranges (code blocks, codespans,
  * link URLs, autolinks, raw HTML, link reference definitions) that must be
  * preserved verbatim; everything else is treated as prose and transformed via
  * `bionicifyText()`.
@@ -25,7 +25,8 @@ export interface MarkdownBionicOptions extends BionicOptions {
 }
 
 /**
- * Find character ranges in `src` that should NOT be transformed.
+ * Find character ranges in `src` that should be preserved verbatim (not
+ * transformed by the bionic walker).
  *
  * Detection precedence is implicit: ranges from different categories are
  * collected into one list and merged later. Overlaps are resolved by union,
@@ -33,54 +34,46 @@ export interface MarkdownBionicOptions extends BionicOptions {
  *
  * Exported for testing.
  */
-export function findForbiddenRanges(src: string): Range[] {
+export function findPreservedRanges(src: string): Range[] {
 	const ranges: Range[] = [];
-	const push = (start: number, end: number) => {
-		if (end > start) ranges.push({ start, end });
+	const pushAll = (re: RegExp, startOffset = 0) => {
+		for (const m of src.matchAll(re)) {
+			const start = (m.index ?? 0) + startOffset;
+			const end = (m.index ?? 0) + m[0].length;
+			if (end > start) ranges.push({ start, end });
+		}
 	};
 
 	// 1. Fenced code blocks: ```lang … ``` or ~~~lang … ~~~
 	//    Opening fence must start a line (with up to 3 spaces of indent).
 	//    Closing fence must match the same fence char and length on its own line.
 	const fenceRe = /^([ \t]{0,3})(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1\2[ \t]*$/gm;
-	for (const m of src.matchAll(fenceRe)) {
-		push(m.index ?? 0, (m.index ?? 0) + m[0].length);
-	}
+	pushAll(fenceRe);
 
 	// 2. Inline code spans: `…`, ``…``, ```…``` (any backtick count, matched).
 	//    May overlap with fenced ranges in pathological inputs; merging handles it.
 	const codespanRe = /(`+)[\s\S]+?\1/g;
-	for (const m of src.matchAll(codespanRe)) {
-		push(m.index ?? 0, (m.index ?? 0) + m[0].length);
-	}
+	pushAll(codespanRe);
 
 	// 3. Link / image URLs: ](…) — protect ONLY the parenthesised URL part.
 	//    The link text itself (between `[` and `]`) is left transformable so
 	//    "click [here](https://example.com)" still bionic-fies "click" and "here".
+	//    Offset 1 skips the closing `]`.
 	const linkUrlRe = /\]\(([^)\n]*)\)/g;
-	for (const m of src.matchAll(linkUrlRe)) {
-		const start = (m.index ?? 0) + 1; // skip the closing `]`
-		push(start, (m.index ?? 0) + m[0].length);
-	}
+	pushAll(linkUrlRe, 1);
 
 	// 4. Autolinks: <https://…>, <a@b.c>
 	const autolinkRe = /<(?:https?:\/\/[^>\s]+|[^@\s<>]+@[^@\s<>]+)>/g;
-	for (const m of src.matchAll(autolinkRe)) {
-		push(m.index ?? 0, (m.index ?? 0) + m[0].length);
-	}
+	pushAll(autolinkRe);
 
 	// 5. Raw HTML tags and comments.
 	const htmlRe = /<!--[\s\S]*?-->|<\/?[a-zA-Z][^>]*>/g;
-	for (const m of src.matchAll(htmlRe)) {
-		push(m.index ?? 0, (m.index ?? 0) + m[0].length);
-	}
+	pushAll(htmlRe);
 
 	// 6. Reference-link definitions on their own line:  [foo]: url ["title"]
 	const refDefRe =
 		/^[ \t]{0,3}\[[^\]\n]+\]:[ \t]+\S+(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*$/gm;
-	for (const m of src.matchAll(refDefRe)) {
-		push(m.index ?? 0, (m.index ?? 0) + m[0].length);
-	}
+	pushAll(refDefRe);
 
 	return ranges;
 }
@@ -119,7 +112,7 @@ export function bionicifyMarkdown(
 ): string {
 	if (!src) return src;
 
-	const merged = mergeRanges(findForbiddenRanges(src));
+	const merged = mergeRanges(findPreservedRanges(src));
 
 	const transformProse = (text: string): string => {
 		if (!opts.skipHeadings) return bionicifyText(text, opts);

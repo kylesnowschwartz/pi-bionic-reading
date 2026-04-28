@@ -74,8 +74,8 @@ export function getBoldLength(word: string, fixation: Fixation): number {
 	const table = FIXATION_TABLES[fixation - 1];
 	const len = word.length;
 	const idx = table.findIndex((boundary) => len <= boundary);
-	const c = idx === -1 ? len - table.length : len - idx;
-	return Math.max(c, 0);
+	const boldCount = idx === -1 ? len - table.length : len - idx;
+	return Math.max(boldCount, 0);
 }
 
 /**

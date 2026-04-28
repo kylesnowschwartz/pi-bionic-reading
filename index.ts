@@ -26,8 +26,12 @@
  * we restore the original `render` first and re-patch with fresh state.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+} from "@mariozechner/pi-coding-agent";
 import { Markdown } from "@mariozechner/pi-tui";
+import { type Fixation } from "./bionic.js";
 import { type BionicReadingConfig, loadBionicConfig } from "./config.js";
 import { bionicifyMarkdown } from "./transform.js";
 
@@ -53,7 +57,7 @@ type PatchableMarkdown = {
 	cachedWidth?: number;
 };
 
-export default async function bionicReading(pi: ExtensionAPI): Promise<void> {
+export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 	const g = globalThis as Record<string, unknown>;
 
 	// Restore previous patch (idempotent reload).
@@ -99,7 +103,7 @@ export default async function bionicReading(pi: ExtensionAPI): Promise<void> {
 					: bionicifyMarkdown(source, state.config);
 
 			// Swap text, blow away the original instance cache, render, swap back.
-			const realText = this.text;
+			const originalText = this.text;
 			this.text = transformed;
 			this.cachedText = undefined;
 			this.cachedLines = undefined;
@@ -109,7 +113,7 @@ export default async function bionicReading(pi: ExtensionAPI): Promise<void> {
 			try {
 				lines = originalRender.call(this, width);
 			} finally {
-				this.text = realText;
+				this.text = originalText;
 				// Don't leave the underlying cache holding the transformed value —
 				// it would be stale if bionic is later disabled mid-session.
 				this.cachedText = undefined;
@@ -127,29 +131,27 @@ export default async function bionicReading(pi: ExtensionAPI): Promise<void> {
 			return lines;
 		};
 
+	const statusMessage = (cfg: PatchState["config"]): string =>
+		cfg.enabled
+			? `[bionic] enabled (fixation ${cfg.fixation})`
+			: `[bionic] disabled`;
+
 	// /bionic — toggle, set state, set fixation.
-	pi.registerCommand("bionic", {
+	api.registerCommand("bionic", {
 		description:
 			"Bionic reading: /bionic [on|off|toggle|1..5]",
-		handler: async (rawArgs: string, ctx: ExtensionContext) => {
+		handler: async (rawArgs: string, ctx: ExtensionCommandContext) => {
 			const arg = rawArgs.trim().toLowerCase();
-			let message: string;
 
 			if (arg === "" || arg === "toggle") {
 				state.config.enabled = !state.config.enabled;
-				message = state.config.enabled
-					? `[bionic] enabled (fixation ${state.config.fixation})`
-					: `[bionic] disabled`;
 			} else if (arg === "on" || arg === "true") {
 				state.config.enabled = true;
-				message = `[bionic] enabled (fixation ${state.config.fixation})`;
 			} else if (arg === "off" || arg === "false") {
 				state.config.enabled = false;
-				message = `[bionic] disabled`;
 			} else if (/^[1-5]$/.test(arg)) {
 				state.config.enabled = true;
-				state.config.fixation = parseInt(arg, 10) as 1 | 2 | 3 | 4 | 5;
-				message = `[bionic] enabled (fixation ${state.config.fixation})`;
+				state.config.fixation = parseInt(arg, 10) as Fixation;
 			} else {
 				ctx.ui.notify(
 					`[bionic] usage: /bionic [on|off|toggle|1..5]`,
@@ -160,11 +162,11 @@ export default async function bionicReading(pi: ExtensionAPI): Promise<void> {
 
 			// Invalidate every cached transform so the change takes effect now.
 			state.cache = new WeakMap();
-			ctx.ui.notify(message, "info");
+			ctx.ui.notify(statusMessage(state.config), "info");
 		},
 	});
 
-	pi.on("session_shutdown", () => {
+	api.on("session_shutdown", () => {
 		(Markdown.prototype as unknown as { render: unknown }).render =
 			state.originalRender;
 		g[INSTANCE_KEY] = undefined;

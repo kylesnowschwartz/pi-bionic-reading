@@ -27,10 +27,8 @@ export interface BionicReadingConfig {
 }
 
 export const CONFIG_DEFAULTS: BionicReadingConfig = {
+	...DEFAULT_OPTIONS,
 	enabled: true,
-	fixation: DEFAULT_OPTIONS.fixation,
-	minWordLength: DEFAULT_OPTIONS.minWordLength,
-	saccade: DEFAULT_OPTIONS.saccade,
 	skipHeadings: false,
 };
 
