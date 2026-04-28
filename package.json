@@ -1,0 +1,48 @@
+{
+  "name": "pi-bionic-reading",
+  "version": "0.1.0",
+  "description": "A pi extension that applies bionic-reading-style fixation bolding to assistant prose in the TUI",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "author": "Kyle Snow Schwartz",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kylesnowschwartz/pi-bionic-reading.git"
+  },
+  "homepage": "https://github.com/kylesnowschwartz/pi-bionic-reading#readme",
+  "bugs": {
+    "url": "https://github.com/kylesnowschwartz/pi-bionic-reading/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "pi-extension",
+    "bionic-reading",
+    "fixation",
+    "readability",
+    "accessibility"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.62.0",
+    "@mariozechner/pi-tui": "^0.62.0"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.62.0",
+    "@mariozechner/pi-tui": "^0.62.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.0"
+  },
+  "pi": {
+    "extensions": [
+      "index.ts"
+    ]
+  }
+}

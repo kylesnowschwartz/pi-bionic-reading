@@ -1,0 +1,60 @@
+/**
+ * pi-bionic-reading configuration.
+ *
+ * Loads from ~/.pi/bionic.jsonc (user-level) and <cwd>/.pi/bionic.jsonc
+ * (project-level). Project values override user values.
+ *
+ * JSONC is parsed with a minimal stripper for // and block comments plus
+ * trailing-comma tolerance (same approach as pi-recap).
+ */
+
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { DEFAULT_OPTIONS, type Fixation } from "./bionic.js";
+
+export interface BionicReadingConfig {
+	/** Master switch. When false, the patch is installed but no-ops. */
+	enabled: boolean;
+	/** Fixation strength: 1 (heaviest) … 5 (lightest). */
+	fixation: Fixation;
+	/** Skip words shorter than this. */
+	minWordLength: number;
+	/** Bold every Nth word: 1 = every word, 2 = alternate, etc. */
+	saccade: number;
+	/** Skip heading lines (so `# Foo Bar` is left untouched). */
+	skipHeadings: boolean;
+}
+
+export const CONFIG_DEFAULTS: BionicReadingConfig = {
+	enabled: true,
+	fixation: DEFAULT_OPTIONS.fixation,
+	minWordLength: DEFAULT_OPTIONS.minWordLength,
+	saccade: DEFAULT_OPTIONS.saccade,
+	skipHeadings: false,
+};
+
+/** Minimal JSONC parser — strips // and block comments and trailing commas. */
+function parseJsonc<T>(text: string): T {
+	let stripped = text.replace(/\/\/.*$/gm, "");
+	stripped = stripped.replace(/\/\*[\s\S]*?\*\//g, "");
+	stripped = stripped.replace(/,\s*([\]}])/g, "$1");
+	return JSON.parse(stripped);
+}
+
+async function tryLoad(path: string): Promise<Partial<BionicReadingConfig>> {
+	try {
+		const raw = await readFile(path, "utf-8");
+		return parseJsonc<Partial<BionicReadingConfig>>(raw);
+	} catch {
+		return {};
+	}
+}
+
+export async function loadBionicConfig(
+	cwd: string,
+): Promise<BionicReadingConfig> {
+	const user = await tryLoad(join(homedir(), ".pi", "bionic.jsonc"));
+	const project = await tryLoad(join(cwd, ".pi", "bionic.jsonc"));
+	return { ...CONFIG_DEFAULTS, ...user, ...project };
+}
