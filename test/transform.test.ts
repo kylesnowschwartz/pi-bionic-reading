@@ -198,3 +198,81 @@ Then visit [the docs](https://example.com/docs) for more.`;
 		expect(twice).not.toBe(once);
 	});
 });
+
+describe("bionicifyMarkdown — emphasis preservation", () => {
+	it("preserves italic spans verbatim (asterisk form)", () => {
+		const out = bionicifyMarkdown(
+			"*bolds the first letters* of each word",
+			{ fixation: 3 },
+		);
+		expect(out).toContain("*bolds the first letters*");
+		// No corruption from nested bold-inside-italic.
+		expect(out).not.toMatch(/\*\*\*[^*]/);
+		// Prose outside the span still transforms.
+		expect(out).toContain("**ea**ch");
+	});
+
+	it("preserves italic spans verbatim (underscore form)", () => {
+		const out = bionicifyMarkdown("_emphasised phrase_ around it", {
+			fixation: 3,
+		});
+		expect(out).toContain("_emphasised phrase_");
+		expect(out).toContain("**aro**und");
+	});
+
+	it("preserves bold spans verbatim (asterisk form)", () => {
+		const out = bionicifyMarkdown("Here is how to **fix** the bug", {
+			fixation: 3,
+		});
+		expect(out).toContain("**fix**");
+		// Outer ** must not be peeled off as italic, so we should never see
+		// ***fi** or similar collisions.
+		expect(out).not.toMatch(/\*\*\*fi/);
+		expect(out).toContain("**b**ug");
+	});
+
+	it("preserves bold spans verbatim (underscore form)", () => {
+		const out = bionicifyMarkdown("please __read this__ carefully", {
+			fixation: 3,
+		});
+		expect(out).toContain("__read this__");
+		expect(out).toContain("**caref**ully");
+	});
+
+	it("does not treat snake_case as italic emphasis", () => {
+		const out = bionicifyMarkdown("rename my_var_name to clearer", {
+			fixation: 3,
+		});
+		// WORD_RE splits on `_`, so each segment of `my_var_name` is bolded
+		// independently — but the key property is that the underscores survive
+		// as literal characters (they aren't consumed as italic delimiters,
+		// which would have wrapped `_var_` into emphasis).
+		const underscoreCount = (out.match(/_/g) ?? []).length;
+		expect(underscoreCount).toBe(2);
+		expect(out).toContain("**clea**rer");
+	});
+
+	it("preserves strikethrough spans verbatim", () => {
+		const out = bionicifyMarkdown("this is ~~wrong~~ actually right", {
+			fixation: 3,
+		});
+		expect(out).toContain("~~wrong~~");
+		expect(out).toContain("**actu**ally");
+	});
+
+	it("preserves emphasis containing multiple words", () => {
+		const out = bionicifyMarkdown(
+			"prefix *bolds the first few letters of each word* suffix",
+			{ fixation: 3 },
+		);
+		expect(out).toContain("*bolds the first few letters of each word*");
+		expect(out).toContain("**pre**fix");
+		expect(out).toContain("**suf**fix");
+	});
+
+	it("does not match emphasis with adjacent whitespace (CommonMark rule)", () => {
+		// `* foo *` is not emphasis in CommonMark; should be transformed as prose.
+		const out = bionicifyMarkdown("a * foo bar * b", { fixation: 3 });
+		expect(out).toContain("**f**oo");
+	});
+});

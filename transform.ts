@@ -75,6 +75,33 @@ export function findPreservedRanges(src: string): Range[] {
 		/^[ \t]{0,3}\[[^\]\n]+\]:[ \t]+\S+(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*$/gm;
 	pushAll(refDefRe);
 
+	// 7. Strong emphasis (bold). Run BEFORE em so the outer ** pair claims its
+	//    territory and we don't peel off the leading * as italic.
+	//    Asterisk form: **…** with no whitespace adjacent to the delimiters,
+	//    and inner * only allowed when not part of another **.
+	const strongAstRe = /\*\*(?=\S)(?:[^*\n]|\*(?!\*))+?(?<=\S)\*\*/g;
+	//    Underscore form: __…__ with intra-word underscore exclusion.
+	const strongUndRe =
+		/(?<![\p{L}\p{N}_])__(?=\S)[^_\n]+?(?<=\S)__(?![\p{L}\p{N}_])/gu;
+	pushAll(strongAstRe);
+	pushAll(strongUndRe);
+
+	// 8. Emphasis (italic). Single * or _.
+	//    Asterisk form: *…* — disallow adjacent letters/digits to keep things
+	//    like `2*3*4` from being treated as emphasis.
+	const emAstRe =
+		/(?<![*\p{L}\p{N}])\*(?=\S)[^*\n]+?(?<=\S)\*(?![*\p{L}\p{N}])/gu;
+	//    Underscore form: _…_ with CommonMark's intra-word underscore rule
+	//    so `snake_case_name` is not parsed as emphasis.
+	const emUndRe =
+		/(?<![\p{L}\p{N}_])_(?=\S)[^_\n]+?(?<=\S)_(?![\p{L}\p{N}_])/gu;
+	pushAll(emAstRe);
+	pushAll(emUndRe);
+
+	// 9. Strikethrough (GFM): ~~…~~
+	const strikeRe = /~~(?=\S)[^~\n]+?(?<=\S)~~/g;
+	pushAll(strikeRe);
+
 	return ranges;
 }
 
