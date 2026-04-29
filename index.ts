@@ -29,6 +29,7 @@
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
+	ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import { Markdown } from "@mariozechner/pi-tui";
 import { type Fixation } from "./bionic.js";
@@ -131,10 +132,22 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 			return lines;
 		};
 
-	const statusMessage = (cfg: PatchState["config"]): string =>
-		cfg.enabled
+	const statusMessage = (cfg: PatchState["config"]): string => {
+		const base = cfg.enabled
 			? `[bionic] enabled (fixation ${cfg.fixation})`
 			: `[bionic] disabled`;
+		// Suffix with the active hotkey so users see what binding to press next.
+		// Suppressed when no hotkey is configured to avoid `· ` dangling suffix.
+		return cfg.hotkey ? `${base} · ${cfg.hotkey}` : base;
+	};
+
+	// Toggle bionic on/off and notify. Shared between the /bionic command and
+	// the configurable hotkey so they stay behaviourally identical.
+	const toggleBionic = (ctx: ExtensionContext): void => {
+		state.config.enabled = !state.config.enabled;
+		state.cache = new WeakMap();
+		ctx.ui.notify(statusMessage(state.config), "info");
+	};
 
 	// /bionic — toggle, set state, set fixation.
 	api.registerCommand("bionic", {
@@ -144,8 +157,11 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 			const arg = rawArgs.trim().toLowerCase();
 
 			if (arg === "" || arg === "toggle") {
-				state.config.enabled = !state.config.enabled;
-			} else if (arg === "on" || arg === "true") {
+				toggleBionic(ctx);
+				return;
+			}
+
+			if (arg === "on" || arg === "true") {
 				state.config.enabled = true;
 			} else if (arg === "off" || arg === "false") {
 				state.config.enabled = false;
@@ -165,6 +181,17 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 			ctx.ui.notify(statusMessage(state.config), "info");
 		},
 	});
+
+	// Configurable hotkey: same effect as `/bionic` (toggle on/off).
+	// Built-in shortcut conflicts are reported by the runner and the binding is
+	// skipped — we don't need to filter here.
+	const hotkey = state.config.hotkey;
+	if (hotkey) {
+		api.registerShortcut(hotkey, {
+			description: "Toggle bionic reading",
+			handler: (ctx) => toggleBionic(ctx),
+		});
+	}
 
 	api.on("session_shutdown", () => {
 		(Markdown.prototype as unknown as { render: unknown }).render =

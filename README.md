@@ -23,18 +23,20 @@ pi install <path-to-this-directory>
 # or add the repo to ~/.pi/agent/extension-repos.json
 ```
 
-Once installed, bionic mode is on by default. Use `/bionic` to toggle it.
+Once installed, bionic mode is on by default. Use `/bionic` or press `Ctrl+X` (configurable) to toggle it.
 
 ## Commands
 
-| Command       | Effect                                              |
-| ------------- | --------------------------------------------------- |
-| `/bionic`     | Toggle on/off                                       |
-| `/bionic on`  | Enable                                              |
-| `/bionic off` | Disable                                             |
-| `/bionic 1`   | Enable + heaviest fixation (bold ~80% of each word) |
-| `/bionic 3`   | Enable + balanced (default; bold ~50%)              |
-| `/bionic 5`   | Enable + lightest (bold ~30%)                       |
+| Command           | Effect                                              |
+| ----------------- | --------------------------------------------------- |
+| `/bionic`         | Toggle on/off                                       |
+| `/bionic toggle`  | Toggle on/off (explicit form)                       |
+| `/bionic on`      | Enable                                              |
+| `/bionic off`     | Disable                                             |
+| `/bionic 1`       | Enable + heaviest fixation (bold ~80% of each word) |
+| `/bionic 3`       | Enable + balanced (default; bold ~50%)              |
+| `/bionic 5`       | Enable + lightest (bold ~30%)                       |
+| `Ctrl+X` (hotkey) | Toggle on/off (configurable, see below)             |
 
 Changes apply on the next render. Type a character or wait for the next assistant turn to see the effect.
 
@@ -57,11 +59,28 @@ Create `~/.pi/bionic.jsonc` (user-level) or `<project>/.pi/bionic.jsonc` (projec
   "saccade": 1,
 
   // Leave heading lines verbatim instead of bolding their words
-  "skipHeadings": false
+  "skipHeadings": false,
+
+  // Hotkey to toggle bionic mode on/off. Same string format pi uses for
+  // keybindings (e.g. "ctrl+x", "ctrl+q", "f6"). Set to null or "" to
+  // disable. Conflicts with built-in pi shortcuts are reported and skipped.
+  // Note: pi-tui only supports ctrl/shift/alt modifiers — Cmd is unreachable
+  // from a TTY on macOS, so "cmd+..." bindings will not work.
+  "hotkey": "ctrl+x"
 }
 ```
 
 All fields are optional. Defaults shown above.
+
+### Hotkey not firing?
+
+The `/bionic` toast (e.g. `[bionic] enabled (fixation 3)`) is your confirmation the binding fired. If it doesn't appear when you press the configured key:
+
+1. **Hard conflict with a pi built-in.** Pi's keybinding registry marks some shortcuts as non-overridable. The runner skips your binding entirely and logs a warning at extension load. Check pi's startup diagnostics after a config change.
+2. **Key swallowed upstream.** Tmux leaders, terminal-emulator menu shortcuts, and macOS system shortcuts all consume keystrokes before pi's stdin sees them. `Ctrl+B` under tmux's default leader, for example, never reaches pi.
+3. **Cmd-based shortcut.** pi-tui only recognises `ctrl`/`shift`/`alt` modifiers, and TTYs on macOS can't see Cmd at all. Anything starting with `cmd+` won't work.
+
+**Note on the default `ctrl+x`.** Recent pi versions bind `ctrl+x` to `app.models.clearAll` inside the model-selector overlay (the surface you open with `Ctrl+L`). This is a *soft* conflict (`restrictOverride: false`): the runner logs `Extension shortcut conflict: 'ctrl+x' is built-in shortcut for app.models.clearAll and … Using …/index.ts.` at startup, then hands the binding to this extension. The toggle works in the editor as expected; the only effect is that pressing `Ctrl+X` inside the model selector toggles bionic instead of clearing models. If you'd rather avoid the diagnostic line and keep the model-selector default, set `"hotkey": "ctrl+\\"` (or any other free key) in `bionic.jsonc`.
 
 ## How it works
 
@@ -74,7 +93,7 @@ All fields are optional. Defaults shown above.
 
 | File             | Purpose                                              |
 | ---------------- | ---------------------------------------------------- |
-| `index.ts`       | Entry point. Monkey-patch, command, lifecycle.       |
+| `index.ts`       | Entry point. Monkey-patch, command, hotkey, lifecycle. |
 | `bionic.ts`      | Word-level algorithm and fixation tables.            |
 | `transform.ts`   | Markdown-aware walker and forbidden-range detection. |
 | `config.ts`      | JSONC config loader (user + project merge).          |

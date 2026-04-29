@@ -11,7 +11,19 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { KeyId } from "@mariozechner/pi-tui";
 import { DEFAULT_OPTIONS, type Fixation } from "./bionic.js";
+
+/**
+ * Hotkey identifier (e.g. "ctrl+x", "ctrl+q", "f6"). Same string format pi
+ * uses for keybindings; see `KeyId` in `@mariozechner/pi-tui`. Set to `null`
+ * (or empty string) to disable the hotkey entirely.
+ *
+ * pi-tui only recognises `ctrl`, `shift`, and `alt` modifiers — there is no
+ * `cmd`/`super`/`meta` token, and the Kitty-protocol parser explicitly
+ * rejects those modifier bits. Cmd-based shortcuts cannot work in a TTY.
+ */
+export type BionicHotkey = KeyId | null;
 
 export interface BionicReadingConfig {
 	/** Master switch. When false, the patch is installed but no-ops. */
@@ -24,12 +36,18 @@ export interface BionicReadingConfig {
 	saccade: number;
 	/** Skip heading lines (so `# Foo Bar` is left untouched). */
 	skipHeadings: boolean;
+	/**
+	 * Hotkey to toggle bionic mode on/off. Defaults to `"ctrl+x"`.
+	 * Set to `null` or `""` to disable.
+	 */
+	hotkey: BionicHotkey;
 }
 
 export const CONFIG_DEFAULTS: BionicReadingConfig = {
 	...DEFAULT_OPTIONS,
 	enabled: true,
 	skipHeadings: false,
+	hotkey: "ctrl+x",
 };
 
 /** Minimal JSONC parser — strips // and block comments and trailing commas. */
