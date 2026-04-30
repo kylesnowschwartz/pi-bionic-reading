@@ -5,9 +5,23 @@ All notable changes to `pi-bionic-reading` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] — 2026
 
 ### Added
+
+- **`/bionic color none` clears the color override.** Drops only the
+  `color` field from the active `prefixStyle`, leaving decorations and the
+  `ansi` escape hatch intact. When no decoration remains, the renderer
+  falls through to the host's `theme.bold` — i.e. the terminal's default
+  foreground. Mirrors the existing `/bionic style none` clear sentinel.
+- **`/bionic invert` toggles suffix-bolding (prototype).** Inverts the
+  fixation cue: same partition, but the `**…**` wrap lands on the
+  SUFFIX of each sub-word instead of the prefix — useful for users who
+  track a trailing cue more easily than a leading one. Each sub-word
+  inverts independently, so camelCase / acronym splits still produce one
+  cue per sub-word. Persistable in `bionic.jsonc` via the new
+  `invert: boolean` config field; toggleable live with `/bionic invert`
+  (session-only). Default `false`.
 
 - **Per-theme presets (prototype).** New optional `themes` block in
   `bionic.jsonc` lets you stash separate `light` / `dark` presets that
