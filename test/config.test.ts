@@ -113,4 +113,44 @@ describe("loadBionicConfig", () => {
 		const config = await loadBionicConfig(cwd);
 		expect(config.prefixStyle).toEqual({ color: "red", bold: true });
 	});
+
+	// Handover task 2 — parseJsonc must not corrupt string-literal contents.
+	// The previous hand-rolled stripper applied // and /* */ removal across the
+	// whole input, including inside quoted strings. The fields most likely to
+	// contain // or /* are prefixStyle.ansi (raw escape sequences — OSC 8
+	// hyperlinks contain `//` legitimately) and any future URL-shaped value.
+	it("preserves `//` inside string literals (handover task 2)", async () => {
+		await mkdir(join(cwd, ".pi"), { recursive: true });
+		await writeFile(
+			join(cwd, ".pi", "bionic.jsonc"),
+			'{ "prefixStyle": { "ansi": "ESC//x" } }\n',
+			"utf-8",
+		);
+		const config = await loadBionicConfig(cwd);
+		expect(config.prefixStyle).toEqual({ ansi: "ESC//x" });
+	});
+
+	it("preserves `/* */` inside string literals (handover task 2)", async () => {
+		await mkdir(join(cwd, ".pi"), { recursive: true });
+		await writeFile(
+			join(cwd, ".pi", "bionic.jsonc"),
+			'{ "prefixStyle": { "ansi": "a/* not a comment */b" } }\n',
+			"utf-8",
+		);
+		const config = await loadBionicConfig(cwd);
+		expect(config.prefixStyle).toEqual({ ansi: "a/* not a comment */b" });
+	});
+
+	it("preserves trailing-comma-shaped substrings inside string literals (handover task 2)", async () => {
+		// The hand-rolled `,\s*([\]}])` stripper would remove the comma in `,]`
+		// or `, }` even when those bytes are inside a quoted string.
+		await mkdir(join(cwd, ".pi"), { recursive: true });
+		await writeFile(
+			join(cwd, ".pi", "bionic.jsonc"),
+			'{ "prefixStyle": { "ansi": "a, ]b" } }\n',
+			"utf-8",
+		);
+		const config = await loadBionicConfig(cwd);
+		expect(config.prefixStyle).toEqual({ ansi: "a, ]b" });
+	});
 });

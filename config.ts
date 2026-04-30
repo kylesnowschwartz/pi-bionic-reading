@@ -4,11 +4,14 @@
  * Loads from ~/.pi/bionic.jsonc (user-level) and <cwd>/.pi/bionic.jsonc
  * (project-level). Project values override user values.
  *
- * JSONC is parsed with a minimal stripper for // and block comments plus
- * trailing-comma tolerance (same approach as pi-recap).
+ * JSONC is parsed with the `jsonc-parser` library (MIT, no deps; the parser
+ * Microsoft uses in VS Code) so // and block comments AND `,]` / `,}` trailing
+ * commas are tolerated WITHOUT corrupting string literals that happen to
+ * contain those byte sequences (e.g. OSC 8 hyperlinks in `prefixStyle.ansi`).
  */
 
 import { readFile } from "node:fs/promises";
+import { parse as parseJsoncLib } from "jsonc-parser";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { KeyId } from "@mariozechner/pi-tui";
@@ -61,12 +64,9 @@ export const CONFIG_DEFAULTS: BionicReadingConfig = {
 	hotkey: "ctrl+x",
 };
 
-/** Minimal JSONC parser — strips // and block comments and trailing commas. */
+/** Strip JSONC comments and trailing commas, returning a parsed value. */
 function parseJsonc<T>(text: string): T {
-	let stripped = text.replace(/\/\/.*$/gm, "");
-	stripped = stripped.replace(/\/\*[\s\S]*?\*\//g, "");
-	stripped = stripped.replace(/,\s*([\]}])/g, "$1");
-	return JSON.parse(stripped);
+	return parseJsoncLib(text, undefined, { allowTrailingComma: true }) as T;
 }
 
 async function tryLoad(path: string): Promise<Partial<BionicReadingConfig>> {
