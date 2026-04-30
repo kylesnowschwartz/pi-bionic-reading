@@ -113,6 +113,30 @@ Create `~/.pi/bionic.jsonc` (user-level) or `<project>/.pi/bionic.jsonc` (projec
 
 All fields are optional. Defaults shown above.
 
+### Named colors
+
+`prefixStyle.color` (and `/bionic color <value>`) accepts these named
+colors. Anything else — `purple`, `orange`, etc. — isn't part of ANSI's
+named palette and is rejected; reach for `#rrggbb`, `256:N`, or `rgb:R,G,B`
+if you want a color outside this set.
+
+| Standard (SGR 30–37) | Bright (SGR 90–97)            |
+| --------------------- | ------------------------------ |
+| `black`               | `brightBlack` (alias: `gray`)  |
+| `red`                 | `brightRed`                    |
+| `green`               | `brightGreen`                  |
+| `yellow`              | `brightYellow`                 |
+| `blue`                | `brightBlue`                   |
+| `magenta`             | `brightMagenta`                |
+| `cyan`                | `brightCyan`                   |
+| `white`               | `brightWhite`                  |
+
+Names are case-sensitive in `bionic.jsonc` and on `/bionic color`
+(`brightWhite`, not `BRIGHTWHITE` or `brightwhite`). The `gray` alias maps
+to the same SGR code as `brightBlack`. The rejection toast for an
+unrecognized name lists this set inline so you can pick a substitute
+without leaving the editor.
+
 ### Configuration examples
 
 Drop any of these into `~/.pi/bionic.jsonc` (user-level) or

@@ -33,8 +33,18 @@ export interface ResolvedPrefixStyle {
 /** Universal SGR reset. All wrappers close with this (S4-AC7). */
 const RESET = "\u001b[0m";
 
-/** Standard + bright ANSI named colors → SGR codes (S4-AC8). */
-const NAMED_COLORS: Readonly<Record<string, number>> = {
+/**
+ * Standard + bright ANSI named colors → SGR codes (S4-AC8).
+ *
+ * Exported (read-only) so `commands.ts` can enumerate the names in
+ * rejection toasts and usage messages — the alternative
+ * (`<name>` as an opaque placeholder) leaves users guessing whether
+ * `purple`, `orange`, etc. are accepted (they aren't — ANSI's named
+ * palette is the 8 standard + 8 bright + the `gray` alias for
+ * `brightBlack`). Iteration order is preserved (insertion order), so
+ * the toast renders standard colors first, then bright, then the alias.
+ */
+export const NAMED_COLORS: Readonly<Record<string, number>> = {
 	black: 30,
 	red: 31,
 	green: 32,

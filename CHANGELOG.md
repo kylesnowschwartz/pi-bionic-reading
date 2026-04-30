@@ -5,6 +5,20 @@ All notable changes to `pi-bionic-reading` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Color rejection toasts now enumerate ANSI's named palette inline.**
+  When `/bionic color <value>` is rejected (or `/bionic color` runs
+  empty), the toast appends `named colors: black, red, green, yellow,
+  blue, magenta, cyan, white, brightBlack, gray, brightRed, brightGreen,
+  brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite` so
+  the `<name>` placeholder in `valid options:` stops being opaque — a
+  user who tries `purple` and gets rejected can now pick `magenta`
+  without leaving the editor. README gains a matching "Named colors"
+  table for passive reference.
+
 ## [0.4.0] — 2026
 
 ### Added

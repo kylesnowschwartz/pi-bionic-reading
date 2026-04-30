@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	augmentValidationWarning,
 	COLOR_OPTIONS,
+	NAMED_COLOR_HINT,
 	parseBionicCommand,
 	STYLE_OPTIONS,
 } from "../commands.js";
@@ -417,5 +418,94 @@ describe("augmentValidationWarning", () => {
 		// hint and the usage messages stop matching.
 		expect(COLOR_OPTIONS).toMatch(/name.*hex.*256.*rgb.*none/);
 		expect(STYLE_OPTIONS).toMatch(/bold.*dim.*italic.*underline.*none/);
+	});
+});
+
+// =============================================================================
+// Named-color discoverability — NAMED_COLOR_HINT
+// =============================================================================
+// `COLOR_OPTIONS` documents the *forms* a color value can take
+// (`<name|#hex|256:N|rgb:R,G,B|none>`), but `<name>` is opaque — a user who
+// guesses `purple` has no way to know ANSI's named palette is the 8 standard
+// + 8 bright + the `gray` alias. The full list lives in
+// `prefix-style.ts`'s `NAMED_COLORS`. `NAMED_COLOR_HINT` enumerates them as a
+// sentence clause appended to color rejection toasts and the empty-arg
+// usage message, so `purple` rejection points the user at `magenta` directly
+// instead of at a placeholder.
+describe("NAMED_COLOR_HINT", () => {
+	it("enumerates every standard ANSI color name", () => {
+		// The 8 standard names (SGR 30–37). If a future refactor drops one,
+		// this test pins the regression.
+		for (const name of [
+			"black",
+			"red",
+			"green",
+			"yellow",
+			"blue",
+			"magenta",
+			"cyan",
+			"white",
+		]) {
+			expect(NAMED_COLOR_HINT).toContain(name);
+		}
+	});
+
+	it("enumerates every bright ANSI color name and the `gray` alias", () => {
+		// SGR 90–97 plus `gray` (90 alias). `gray` matters because users will
+		// often try the more colloquial spelling before `brightBlack`.
+		for (const name of [
+			"brightBlack",
+			"gray",
+			"brightRed",
+			"brightGreen",
+			"brightYellow",
+			"brightBlue",
+			"brightMagenta",
+			"brightCyan",
+			"brightWhite",
+		]) {
+			expect(NAMED_COLOR_HINT).toContain(name);
+		}
+	});
+
+	it("is prefixed with `named colors:` so it reads as a sentence clause", () => {
+		// The augmenter joins the prior `; valid options: <…>` clause with
+		// `; ` and appends NAMED_COLOR_HINT verbatim. The `named colors:`
+		// prefix anchors the clause grammatically.
+		expect(NAMED_COLOR_HINT).toMatch(/^named colors: /);
+	});
+});
+
+describe("augmentValidationWarning includes the named-color list", () => {
+	it("surfaces every named color in the rejection toast", () => {
+		// Motivating case: user types `/bionic color purple`, which fails
+		// `parseColor` because `purple` isn't in NAMED_COLORS. The toast
+		// should now point them at the actual named-palette vocabulary so
+		// they can pick `magenta` (or `brightMagenta`) without leaving the
+		// editor.
+		const out = augmentValidationWarning(
+			'[bionic] prefixStyle.color: unrecognized color "purple"',
+		);
+		expect(out).toContain('unrecognized color "purple"');
+		expect(out).toContain(NAMED_COLOR_HINT);
+		// Spot-check a couple of names directly so a regression that
+		// re-derives NAMED_COLOR_HINT from a different source still fires.
+		expect(out).toContain("magenta");
+		expect(out).toContain("brightWhite");
+		expect(out).toContain("gray");
+	});
+});
+
+describe("USAGE_COLOR (parser-level) includes the named-color list", () => {
+	// The empty-arg path also benefits from named-color discoverability — the
+	// user there hasn't tried anything yet, but they're about to, and seeing
+	// the names up front saves a round-trip through a rejection toast.
+	it("`color` with no arg surfaces the named-color list", () => {
+		const r = parseBionicCommand("color");
+		expect(r.kind).toBe("usage");
+		if (r.kind === "usage") {
+			expect(r.message).toContain(NAMED_COLOR_HINT);
+			expect(r.message).toContain("magenta");
+		}
 	});
 });

@@ -11,7 +11,7 @@
 
 import type { Fixation } from "./bionic.js";
 
-import type { StyleField } from "./prefix-style.js";
+import { NAMED_COLORS, type StyleField } from "./prefix-style.js";
 
 export type BionicCommand =
 	| { kind: "toggle" }
@@ -42,6 +42,19 @@ const STYLE_TOKENS = ["bold", "dim", "italic", "underline"] as const;
 export const COLOR_OPTIONS = "<name|#hex|256:N|rgb:R,G,B|none>";
 export const STYLE_OPTIONS = "<bold|dim|italic|underline|none>";
 
+/**
+ * Comma-separated list of every named color accepted by `parseColor`,
+ * formatted as a sentence clause (`named colors: black, red, ...`). Appended
+ * to color rejection toasts and usage messages so users can discover the
+ * named-palette vocabulary at the point of error — the `<name>` placeholder
+ * in `COLOR_OPTIONS` is otherwise opaque (e.g. is `purple` accepted? It
+ * isn't; ANSI only ships the 8 standard + 8 bright names plus the `gray`
+ * alias).
+ *
+ * Order mirrors `NAMED_COLORS` insertion order (standard → bright → alias).
+ */
+export const NAMED_COLOR_HINT = `named colors: ${Object.keys(NAMED_COLORS).join(", ")}`;
+
 // Unified template across every rejection toast: `[bionic] /bionic <subcmd>:
 // <reason>; valid options: <list>`. Same shape used by `augmentValidationWarning`
 // when reframing prefix-style validator warnings, so the parser and validator
@@ -52,7 +65,7 @@ export const STYLE_OPTIONS = "<bold|dim|italic|underline|none>";
 // most users and obscures the multi-token affordance (`/bionic style bold underline`).
 const USAGE_TOPLEVEL =
 	"[bionic] /bionic: unknown subcommand; valid options: on|off|toggle|1..5|invert|color <value>|style <tokens>";
-const USAGE_COLOR = `[bionic] /bionic color: missing or invalid value; valid options: ${COLOR_OPTIONS}`;
+const USAGE_COLOR = `[bionic] /bionic color: missing or invalid value; valid options: ${COLOR_OPTIONS}; ${NAMED_COLOR_HINT}`;
 const USAGE_STYLE = `[bionic] /bionic style: missing or invalid token; valid options: ${STYLE_OPTIONS} (one or more, space-separated)`;
 
 export function parseBionicCommand(rawArgs: string): BionicCommand {
@@ -168,7 +181,7 @@ export function parseBionicCommand(rawArgs: string): BionicCommand {
  * `none` would be misleading there.
  */
 export function augmentValidationWarning(warning: string): string {
-	const suffix = `; valid options: ${COLOR_OPTIONS}`;
+	const suffix = `; valid options: ${COLOR_OPTIONS}; ${NAMED_COLOR_HINT}`;
 	// Idempotency guard: a re-augmented warning already ends with the suffix.
 	if (warning.endsWith(suffix)) return warning;
 
