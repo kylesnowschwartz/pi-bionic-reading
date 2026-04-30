@@ -13,6 +13,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { KeyId } from "@mariozechner/pi-tui";
 import { DEFAULT_OPTIONS, type Fixation } from "./bionic.js";
+import type { PrefixStyle } from "./prefix-style.js";
 
 /**
  * Hotkey identifier (e.g. "ctrl+x", "ctrl+q", "f6"). Same string format pi
@@ -36,6 +37,16 @@ export interface BionicReadingConfig {
 	saccade: number;
 	/** Skip heading lines (so `# Foo Bar` is left untouched). */
 	skipHeadings: boolean;
+	/**
+	 * Split hyphenated tokens (`react-router-dom`) into per-segment sub-words.
+	 * Default false to preserve English compounds like `well-known`.
+	 */
+	splitHyphenated: boolean;
+	/**
+	 * ANSI styling for the bionic prefix. When unset, the host's `theme.bold`
+	 * is used as today. See SPEC § S4 / `prefix-style.ts` for accepted forms.
+	 */
+	prefixStyle?: PrefixStyle;
 	/**
 	 * Hotkey to toggle bionic mode on/off. Defaults to `"ctrl+x"`.
 	 * Set to `null` or `""` to disable.

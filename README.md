@@ -12,6 +12,8 @@ The Markdown component's `this.text` is left untouched, so subsequent LLM turns 
 
 Code blocks, inline code spans, link URLs, autolinks, raw HTML, and link reference definitions are preserved verbatim. Only prose gets transformed.
 
+Identifiers in prose (`useEffect`, `XMLParser`, `snake_case`) are split on case and underscore boundaries before bolding, so each sub-word gets its own fixation cue: `**u**se**Eff**ect`, `**X**ML**Par**ser`, `**sn**ake_**ca**se`. Hyphenated tokens stay whole by default to preserve English compounds like `**well**-known`.
+
 ## Status
 
 v0.1. The implementation is a monkey-patch over `Markdown.prototype.render` from `@mariozechner/pi-tui`. It works against the current pi version with no upstream changes. The plan is to upstream a `registerTextRenderer` hook in `pi-coding-agent` so the patch is no longer needed.
@@ -27,16 +29,22 @@ Once installed, bionic mode is on by default. Use `/bionic` or press `Ctrl+X` (c
 
 ## Commands
 
-| Command           | Effect                                              |
-| ----------------- | --------------------------------------------------- |
-| `/bionic`         | Toggle on/off                                       |
-| `/bionic toggle`  | Toggle on/off (explicit form)                       |
-| `/bionic on`      | Enable                                              |
-| `/bionic off`     | Disable                                             |
-| `/bionic 1`       | Enable + heaviest fixation (bold ~80% of each word) |
-| `/bionic 3`       | Enable + balanced (default; bold ~50%)              |
-| `/bionic 5`       | Enable + lightest (bold ~30%)                       |
-| `Ctrl+X` (hotkey) | Toggle on/off (configurable, see below)             |
+| Command                          | Effect                                              |
+| -------------------------------- | --------------------------------------------------- |
+| `/bionic`                        | Toggle on/off                                       |
+| `/bionic toggle`                 | Toggle on/off (explicit form)                       |
+| `/bionic on`                     | Enable                                              |
+| `/bionic off`                    | Disable                                             |
+| `/bionic 1`                      | Enable + heaviest fixation (bold ~80% of each word) |
+| `/bionic 3`                      | Enable + balanced (default; bold ~50%)              |
+| `/bionic 5`                      | Enable + lightest (bold ~30%)                       |
+| `/bionic color <value>`          | Set prefix color: name, `#rrggbb`, `256:N`, `rgb:R,G,B` |
+| `/bionic style bold`             | **Toggle** a decoration on/off (also: `dim`, `italic`, `underline`). Repeat to flip back. |
+| `/bionic style bold underline`   | Toggle multiple decorations in one call (each independently)        |
+| `/bionic style none`             | Force-clear all four decoration booleans                            |
+| `Ctrl+X` (hotkey)                | Toggle on/off (configurable, see below)                             |
+
+Color and style changes apply for the rest of the session only — they do **not** write to `bionic.jsonc`. See the *Slash commands vs. file persistence* section below.
 
 Changes apply on the next render. Type a character or wait for the next assistant turn to see the effect.
 
@@ -61,6 +69,29 @@ Create `~/.pi/bionic.jsonc` (user-level) or `<project>/.pi/bionic.jsonc` (projec
   // Leave heading lines verbatim instead of bolding their words
   "skipHeadings": false,
 
+  // Split hyphenated tokens (`react-router-dom` → `**rea**ct-**rou**ter-**d**om`)
+  // into per-segment sub-words. Default false to preserve English compounds
+  // like `well-known`. Turn on if you read a lot of identifier-heavy prose.
+  "splitHyphenated": false,
+
+  // ANSI styling for the bolded prefix. When unset, the host's default bold
+  // style is used (typically just SGR-1, which on bright-colored fonts can
+  // be invisible). Set this to add a color or alternate decoration.
+  //
+  //   color    : named ("red", "brightWhite", "gray"…), "#rrggbb",
+  //              "256:N" (0–255), or "rgb:R,G,B" (each 0–255).
+  //   bold     : SGR 1 (additional, on top of color)
+  //   italic   : SGR 3
+  //   underline: SGR 4
+  //   dim      : SGR 2
+  //   ansi     : raw escape-sequence escape hatch — wins over the above.
+  //              Close is always \u001b[0m.
+  //
+  // Side-effect: while bionic is on, this style also applies to user-authored
+  // **bold** literals in assistant messages (the override targets theme.bold).
+  // "prefixStyle": { "color": "red", "bold": true },
+
+
   // Hotkey to toggle bionic mode on/off. Same string format pi uses for
   // keybindings (e.g. "ctrl+x", "ctrl+q", "f6"). Set to null or "" to
   // disable. Conflicts with built-in pi shortcuts are reported and skipped.
@@ -71,6 +102,77 @@ Create `~/.pi/bionic.jsonc` (user-level) or `<project>/.pi/bionic.jsonc` (projec
 ```
 
 All fields are optional. Defaults shown above.
+
+### Configuration examples
+
+Drop any of these into `~/.pi/bionic.jsonc` (user-level) or
+`<project>/.pi/bionic.jsonc` (project-level). Project values override user
+values; both layers merge over the defaults.
+
+**1. Make the bionic prefix vivid red on a dark terminal:**
+
+```jsonc
+{ "prefixStyle": { "color": "red", "bold": true } }
+```
+
+**2. Use a 256-color amber that survives most palettes:**
+
+```jsonc
+{ "prefixStyle": { "color": "256:208" } }
+```
+
+**3. Truecolor hex — only works on terminals with truecolor support:**
+
+```jsonc
+{ "prefixStyle": { "color": "#ffaa00" } }
+```
+
+**4. No color, just dim the prefix — inverts the usual contrast (prefix is
+the *quiet* part, rest of the word is the *loud* part):**
+
+```jsonc
+{ "prefixStyle": { "dim": true } }
+```
+
+**5. Read a lot of code-heavy assistant prose? Turn on hyphen splitting and
+use a contrast-friendly color:**
+
+```jsonc
+{
+  "splitHyphenated": true,
+  "prefixStyle": { "color": "brightWhite", "bold": true }
+}
+```
+
+**6. Lightest fixation (bold ~30%) plus underline so the cue is visible
+without dominating the line:**
+
+```jsonc
+{
+  "fixation": 5,
+  "prefixStyle": { "underline": true }
+}
+```
+
+**7. Raw ANSI escape hatch — useful if your terminal has a custom palette
+you want to target precisely:**
+
+```jsonc
+{ "prefixStyle": { "ansi": "\u001b[38;5;226;1m" } }
+```
+
+### Slash commands vs. file persistence
+
+`/bionic color`, `/bionic style`, and the toggle commands all mutate the
+**active session only** — they do not write to `bionic.jsonc`. The intended
+workflow is:
+
+1. Experiment live: `/bionic color blue`, `/bionic style underline`, etc.
+2. When you find a combination you like, copy it into `bionic.jsonc`.
+3. Restart pi to confirm the file-based config produces the same look.
+
+Each new pi session starts from `bionic.jsonc` afresh; whatever you typed
+into the previous session does not carry over.
 
 ### Hotkey not firing?
 

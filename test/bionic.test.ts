@@ -182,3 +182,330 @@ describe("bionicifyText", () => {
 		);
 	});
 });
+
+// =============================================================================
+// S1 — Split camelCase / PascalCase into sub-words
+// =============================================================================
+// See .agent-history/SPEC.md § S1.  Each `it()` below maps 1:1 to an
+// acceptance criterion (S1-AC1 … S1-AC6) plus the reference-case table.
+describe("S1 — camelCase / PascalCase splitting", () => {
+	describe("S1-AC1 — split at lower→Upper and digit→Upper boundaries", () => {
+		it("splits camelCase at lower→Upper", () => {
+			// `useEffect` → sub-words `use` (len 3, bold 1) | `Effect` (len 6, bold 3)
+			expect(bionicifyText("useEffect", { fixation: 3 })).toBe(
+				"**u**se**Eff**ect",
+			);
+		});
+
+		it("splits at digit→Upper boundary", () => {
+			// `v2Beta` → `v2` (len 2, has letter, bold 1) | `Beta` (len 4, bold 2)
+			expect(bionicifyText("v2Beta", { fixation: 3 })).toBe(
+				"**v**2**Be**ta",
+			);
+		});
+	});
+
+	describe("S1-AC2 — split at Upper→Upper+lower so acronym runs stay whole", () => {
+		it("splits XMLParser as XML | Parser, not X|M|L|Parser", () => {
+			expect(bionicifyText("XMLParser", { fixation: 3 })).toBe(
+				"**X**ML**Par**ser",
+			);
+		});
+
+		it("splits IOError as IO | Error", () => {
+			expect(bionicifyText("IOError", { fixation: 3 })).toBe(
+				"**I**O**Err**or",
+			);
+		});
+
+		it("keeps a trailing digit run attached to the preceding upper run", () => {
+			// `parseHTML5` → `parse` | `HTML5`. `HTML5` has no case boundary;
+			// digit-only suffix does not split.
+			expect(bionicifyText("parseHTML5", { fixation: 3 })).toBe(
+				"**par**se**HTM**L5",
+			);
+		});
+	});
+
+	describe("S1-AC3 — minWordLength applies per sub-word", () => {
+		it("skips a sub-word shorter than minWordLength but bolds the rest", () => {
+			// `IOError` with minWordLength=3:
+			//   `IO` (len 2) → skipped (no markers)
+			//   `Error` (len 5) → bold 3 → **Err**or
+			expect(
+				bionicifyText("IOError", { fixation: 3, minWordLength: 3 }),
+			).toBe("IO**Err**or");
+		});
+	});
+
+	describe("S1-AC4 — character-preservation round-trip", () => {
+		const inputs = [
+			"useEffect",
+			"XMLParser",
+			"IOError",
+			"parseHTML5",
+			"hello world",
+			"call useEffect inside a React component",
+		];
+		for (const input of inputs) {
+			it(`stripping ** from output yields the original: ${JSON.stringify(input)}`, () => {
+				const out = bionicifyText(input, { fixation: 3 });
+				expect(out.replace(/\*\*/g, "")).toBe(input);
+			});
+		}
+	});
+
+	describe("S1-AC5 — no regression on tokens without a case boundary", () => {
+		it("all-lowercase token unchanged from pre-S1 behavior", () => {
+			expect(bionicifyText("hello", { fixation: 3 })).toBe("**hel**lo");
+		});
+
+		it("all-uppercase token unchanged from pre-S1 behavior", () => {
+			// `WORD` len 4, fixation 3, no boundary → bold 2.
+			expect(bionicifyText("WORD", { fixation: 3 })).toBe("**WO**RD");
+		});
+
+		it("prose without identifiers matches existing snapshot", () => {
+			expect(bionicifyText("hello world", { fixation: 3 })).toBe(
+				"**hel**lo **wor**ld",
+			);
+		});
+	});
+
+	describe("S1-AC6 — saccade indexing advances per sub-word", () => {
+		it("saccade=2 alternates within and across identifiers", () => {
+			// Sub-words across the input, in order:
+			//   0: `use`     (bold 1)
+			//   1: `Effect`  (skip)
+			//   2: `another` (len 7, bold 4)
+			//   3: `Word`    (skip)
+			const out = bionicifyText("useEffect anotherWord", {
+				fixation: 3,
+				saccade: 2,
+			});
+			expect(out).toBe("**u**seEffect **anot**herWord");
+		});
+	});
+});
+
+// =============================================================================
+// S2 — snake_case continues to split (regression guard)
+// =============================================================================
+// See .agent-history/SPEC.md § S2.  These tests lock in behavior that today
+// emerges implicitly from `_` not being in the WORD_RE character class — a
+// future refactor (adding `_` to a joiner, swapping the regex) must not
+// silently regress them.
+describe("S2 — snake_case regression guard", () => {
+	describe("S2-AC1 — tokenize snake_case as two sub-words", () => {
+		it("bolds `snake` and `case` independently", () => {
+			// `snake` len 5 → bold 3; `case` len 4 → bold 2.
+			expect(bionicifyText("snake_case", { fixation: 3 })).toBe(
+				"**sna**ke_**ca**se",
+			);
+		});
+
+		it("bolds each segment of a 3-segment snake_case identifier", () => {
+			// `my_var_name` → `my` (len 2, bold 1) | `var` (len 3, bold 1) | `name` (len 4, bold 2)
+			expect(bionicifyText("my_var_name", { fixation: 3 })).toBe(
+				"**m**y_**v**ar_**na**me",
+			);
+		});
+	});
+
+	describe("S2-AC2 — underscores preserved literally, never inside `**…**`", () => {
+		const inputs = [
+			"snake_case",
+			"my_var_name",
+			"_leading",
+			"trailing_",
+			"a__b",
+			"x_y_z",
+		];
+		for (const input of inputs) {
+			it(`preserves every \`_\` and never wraps one in **: ${JSON.stringify(input)}`, () => {
+				const out = bionicifyText(input, { fixation: 3 });
+
+				// Same number of underscores in, same number out.
+				const inputUnderscores = (input.match(/_/g) ?? []).length;
+				const outputUnderscores = (out.match(/_/g) ?? []).length;
+				expect(outputUnderscores).toBe(inputUnderscores);
+
+				// Stripping ** markers must round-trip to the original input.
+				expect(out.replace(/\*\*/g, "")).toBe(input);
+
+				// Every `**…**` span in the output must contain zero underscores.
+				const boldSpans = [...out.matchAll(/\*\*([^*]+)\*\*/g)];
+				for (const m of boldSpans) {
+					expect(m[1]).not.toContain("_");
+				}
+			});
+		}
+	});
+
+	describe("S2-AC3 — emitted `**…**` does not turn `__` into accidental bold", () => {
+		it("output of `__double_underscores__` keeps both `__` runs intact and untouched", () => {
+			// WORD_RE matches `double` and `underscores`; the surrounding `__`
+			// runs are gap characters and pass through verbatim. The bolded
+			// prefixes never consume the underscores, so the original `__…__`
+			// outer delimiters survive in their original positions.
+			const out = bionicifyText("__double_underscores__", { fixation: 3 });
+			expect(out.startsWith("__")).toBe(true);
+			expect(out.endsWith("__")).toBe(true);
+			// Total underscore count: 2 (leading) + 1 (middle) + 2 (trailing) = 5.
+			expect((out.match(/_/g) ?? []).length).toBe(5);
+			// Round-trip.
+			expect(out.replace(/\*\*/g, "")).toBe("__double_underscores__");
+		});
+
+		it("does not introduce a new `__` substring that wasn't in the input", () => {
+			// Counts of `__` runs must match between input and output. The
+			// transform only adds `**` markers; it must never coalesce single
+			// `_` characters into `__` (which would be a new bold delimiter).
+			const inputs = ["snake_case", "my_var_name", "a_b_c_d", "_x_"];
+			for (const input of inputs) {
+				const out = bionicifyText(input, { fixation: 3 });
+				const inDoubles = (input.match(/__/g) ?? []).length;
+				const outDoubles = (out.match(/__/g) ?? []).length;
+				expect(outDoubles).toBe(inDoubles);
+			}
+		});
+	});
+});
+
+// =============================================================================
+// S3 — Opt-in `splitHyphenated` flag for kebab-case identifiers
+// =============================================================================
+// See .agent-history/SPEC.md § S3.  Default-off; opt-in splits each
+// hyphen-separated segment as its own bionic sub-word while preserving every
+// `-` literally between segments.  S3-AC1 / S3-AC6 are covered in
+// test/config.test.ts (config field + project-override behavior).
+describe("S3 — splitHyphenated opt-in", () => {
+	describe("S3-AC2 — default (off) preserves today's hyphen behavior", () => {
+		it("`well-known` stays a single bionic token by default", () => {
+			expect(bionicifyText("well-known", { fixation: 3 })).toBe(
+				"**well**-known",
+			);
+		});
+
+		it("`well-known` stays a single bionic token when explicitly false", () => {
+			expect(
+				bionicifyText("well-known", {
+					fixation: 3,
+					splitHyphenated: false,
+				}),
+			).toBe("**well**-known");
+		});
+
+		it("`pipefail-sensitive` keeps the existing nudge behavior when off", () => {
+			// Regression guard: this is the well-known right-flanking case.
+			expect(
+				bionicifyText("pipefail-sensitive", {
+					fixation: 3,
+					splitHyphenated: false,
+				}),
+			).toBe("**pipefail**-sensitive");
+		});
+	});
+
+	describe("S3-AC3 — `splitHyphenated: true` splits each segment", () => {
+		it("splits `well-known` into per-segment sub-words", () => {
+			// `well` len 4 → bold 2 → **we**ll
+			// `known` len 5 → bold 3 → **kno**wn
+			expect(
+				bionicifyText("well-known", {
+					fixation: 3,
+					splitHyphenated: true,
+				}),
+			).toBe("**we**ll-**kno**wn");
+		});
+
+		it("splits a 3-segment kebab identifier", () => {
+			// `react` len 5 → bold 3; `router` len 6 → bold 3; `dom` len 3 → bold 1.
+			expect(
+				bionicifyText("react-router-dom", {
+					fixation: 3,
+					splitHyphenated: true,
+				}),
+			).toBe("**rea**ct-**rou**ter-**d**om");
+		});
+
+		it("splits `use-effect`", () => {
+			expect(
+				bionicifyText("use-effect", {
+					fixation: 3,
+					splitHyphenated: true,
+				}),
+			).toBe("**u**se-**eff**ect");
+		});
+
+		it("splits `pipefail-sensitive` with no closing-`**`-after-hyphen artifact", () => {
+			// `pipefail` len 8 → bold 4; `sensitive` len 9 → bold 5.
+			const out = bionicifyText("pipefail-sensitive", {
+				fixation: 3,
+				splitHyphenated: true,
+			});
+			expect(out).toBe("**pipe**fail-**sensi**tive");
+			// Right-flanking guard: the original bug emitted `**pipefail-**sensitive`
+			// where a closing `**` was preceded by `-`. The structural guarantee
+			// — no `**…**` span contains `-` — is locked in by S3-AC4 below.
+		});
+	});
+
+	describe("S3-AC4 — every `-` preserved literally, never inside `**…**`", () => {
+		const inputs = [
+			"well-known",
+			"react-router-dom",
+			"use-effect",
+			"pipefail-sensitive",
+			"a-b-c-d",
+		];
+		for (const input of inputs) {
+			it(`preserves every \`-\` and never wraps one in **: ${JSON.stringify(input)}`, () => {
+				const out = bionicifyText(input, {
+					fixation: 3,
+					splitHyphenated: true,
+				});
+
+				const inputHyphens = (input.match(/-/g) ?? []).length;
+				const outputHyphens = (out.match(/-/g) ?? []).length;
+				expect(outputHyphens).toBe(inputHyphens);
+
+				expect(out.replace(/\*\*/g, "")).toBe(input);
+
+				const boldSpans = [...out.matchAll(/\*\*([^*]+)\*\*/g)];
+				for (const m of boldSpans) {
+					expect(m[1]).not.toContain("-");
+				}
+			});
+		}
+	});
+
+	describe("S3-AC5 — apostrophe stays inside the first segment", () => {
+		it("splits `let's-go` between `let's` and `go`", () => {
+			// `let's` len 5 (with apostrophe) → bold 3 lands on 't', no nudge.
+			// `go` len 2 → bold 1.
+			expect(
+				bionicifyText("let's-go", {
+					fixation: 3,
+					splitHyphenated: true,
+				}),
+			).toBe("**let**'s-**g**o");
+		});
+	});
+
+	describe("S3 — interaction with S1 (camelCase) inside hyphen segments", () => {
+		it("applies camelCase splitting to each hyphen-separated segment", () => {
+			// `use-effectHook` with splitHyphenated=true:
+			//   segment 1: `use` (len 3) → bold 1 → **u**se
+			//   segment 2: `effectHook` → sub-words `effect` (len 6, bold 3),
+			//                                       `Hook` (len 4, bold 2)
+			//   → **eff**ect**Ho**ok
+			expect(
+				bionicifyText("use-effectHook", {
+					fixation: 3,
+					splitHyphenated: true,
+				}),
+			).toBe("**u**se-**eff**ect**Ho**ok");
+		});
+	});
+});

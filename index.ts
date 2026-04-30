@@ -34,6 +34,14 @@ import type {
 import { Markdown } from "@mariozechner/pi-tui";
 import { type Fixation } from "./bionic.js";
 import { type BionicReadingConfig, loadBionicConfig } from "./config.js";
+import {
+	applyClearStyle,
+	applyToggleStyle,
+	decideStyleApplication,
+	resolvePrefixStyle,
+	withPrefixStyleOverride,
+} from "./prefix-style.js";
+import { parseBionicCommand } from "./commands.js";
 import { bionicifyMarkdown } from "./transform.js";
 
 const INSTANCE_KEY = "__pi_bionic_reading_active__";
@@ -49,6 +57,12 @@ interface PatchState {
 	originalRender: (this: unknown, width: number) => string[];
 	cache: WeakMap<object, CacheEntry>;
 	config: BionicReadingConfig;
+	/**
+	 * Resolved prefix-style wrapper, or null when the user hasn't configured
+	 * one (fall through to the host theme). Re-resolved lazily on each render
+	 * to pick up `prefixStyle` mutations from future slash commands (S5).
+	 */
+	prefixWrap: ((text: string) => string) | null;
 }
 
 type PatchableMarkdown = {
@@ -56,6 +70,8 @@ type PatchableMarkdown = {
 	cachedText?: string;
 	cachedLines?: string[];
 	cachedWidth?: number;
+	/** pi-tui's `Markdown` declares this private; we mutate it for S4. */
+	theme?: { bold: (text: string) => string };
 };
 
 export default async function bionicReading(api: ExtensionAPI): Promise<void> {
@@ -70,10 +86,15 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 
 	const config = await loadBionicConfig(process.cwd());
 
+	// S4-AC5: resolve prefixStyle at load and surface validation warnings.
+	const resolved = resolvePrefixStyle(config.prefixStyle);
+	for (const w of resolved.warnings) console.warn(w);
+
 	const state: PatchState = {
 		originalRender: Markdown.prototype.render as PatchState["originalRender"],
 		cache: new WeakMap(),
 		config,
+		prefixWrap: resolved.wrap,
 	};
 	g[INSTANCE_KEY] = state;
 
@@ -112,7 +133,15 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 
 			let lines: string[];
 			try {
-				lines = originalRender.call(this, width);
+				// S4: when prefixWrap is non-null, swap `theme.bold` for the duration
+				// of this render so every `**…**` (including bionic prefixes) renders
+				// with the user's configured ANSI style. The override is restored
+				// even on throw (S4-AC4).
+				lines = withPrefixStyleOverride(
+					this.theme ?? { bold: (t: string) => t },
+					state.prefixWrap,
+					() => originalRender.call(this, width),
+				);
 			} finally {
 				this.text = originalText;
 				// Don't leave the underlying cache holding the transformed value —
@@ -149,31 +178,70 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 		ctx.ui.notify(statusMessage(state.config), "info");
 	};
 
-	// /bionic — toggle, set state, set fixation.
+	// S5/S7: apply a new prefixStyle in-memory. Returns true on apply, false on
+	// reject. Rejection happens iff `decideStyleApplication` reports any
+	// warnings (S7-AC1) — partial validation success is treated as failure so
+	// the user's previous good style survives a typo (S7-AC4). Warnings are
+	// surfaced as toasts (S7-AC2). The caller short-circuits the cache+info
+	// tail when this returns false (S7-AC3). No persistence to bionic.jsonc
+	// (S5-AC6).
+	const applyPrefixStyle = (
+		next: NonNullable<typeof state.config.prefixStyle>,
+		ctx: ExtensionContext,
+	): boolean => {
+		const decision = decideStyleApplication(next);
+		for (const w of decision.warnings) ctx.ui.notify(w, "warning");
+		if (!decision.apply) return false;
+		state.config.prefixStyle = next;
+		state.prefixWrap = decision.wrap;
+		return true;
+	};
+
+	// /bionic — dispatch over the parser in `commands.ts` (S5).
 	api.registerCommand("bionic", {
 		description:
-			"Bionic reading: /bionic [on|off|toggle|1..5]",
+			"Bionic reading: /bionic [on|off|toggle|1..5|color <value>|style <tokens>]",
 		handler: async (rawArgs: string, ctx: ExtensionCommandContext) => {
-			const arg = rawArgs.trim().toLowerCase();
+			const cmd = parseBionicCommand(rawArgs);
 
-			if (arg === "" || arg === "toggle") {
-				toggleBionic(ctx);
-				return;
-			}
+			switch (cmd.kind) {
+				case "toggle":
+					toggleBionic(ctx);
+					return;
 
-			if (arg === "on" || arg === "true") {
-				state.config.enabled = true;
-			} else if (arg === "off" || arg === "false") {
-				state.config.enabled = false;
-			} else if (/^[1-5]$/.test(arg)) {
-				state.config.enabled = true;
-				state.config.fixation = parseInt(arg, 10) as Fixation;
-			} else {
-				ctx.ui.notify(
-					`[bionic] usage: /bionic [on|off|toggle|1..5]`,
-					"warning",
-				);
-				return;
+				case "set-enabled":
+					state.config.enabled = cmd.value;
+					break;
+
+				case "set-fixation":
+					// Setting fixation also enables, matching pre-S5 behavior (S5-AC5).
+					state.config.enabled = true;
+					state.config.fixation = cmd.value;
+					break;
+
+				case "set-color": {
+					const next = { ...(state.config.prefixStyle ?? {}), color: cmd.value };
+					// S7-AC3: bail before cache+info toast on rejection so the
+					// rejected command is a no-op from the user's perspective.
+					if (!applyPrefixStyle(next, ctx)) return;
+					break;
+				}
+
+				case "toggle-style": {
+					const current = state.config.prefixStyle ?? {};
+					if (!applyPrefixStyle(applyToggleStyle(current, cmd.fields), ctx)) return;
+					break;
+				}
+
+				case "clear-style": {
+					const current = state.config.prefixStyle ?? {};
+					if (!applyPrefixStyle(applyClearStyle(current), ctx)) return;
+					break;
+				}
+
+				case "usage":
+					ctx.ui.notify(cmd.message, "warning");
+					return;
 			}
 
 			// Invalidate every cached transform so the change takes effect now.

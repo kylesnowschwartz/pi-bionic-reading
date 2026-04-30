@@ -55,12 +55,19 @@ export interface BionicOptions {
 	minWordLength?: number;
 	/** Bold every Nth word: 1 = every word, 2 = alternate, etc. Default 1. */
 	saccade?: number;
+	/**
+	 * Split hyphenated tokens (`react-router-dom`, `use-effect`) into per-segment
+	 * sub-words. Default false to preserve English compounds like `well-known`.
+	 * See SPEC § S3.
+	 */
+	splitHyphenated?: boolean;
 }
 
 export const DEFAULT_OPTIONS: Required<BionicOptions> = {
 	fixation: 3,
 	minWordLength: 2,
 	saccade: 1,
+	splitHyphenated: false,
 };
 
 /**
@@ -85,6 +92,31 @@ export function getBoldLength(word: string, fixation: Fixation): number {
  */
 const WORD_RE = /[\p{L}\p{N}]+(?:[-'][\p{L}\p{N}]+)*/gu;
 
+/**
+ * Split a token on case/digit boundaries so that camelCase / PascalCase /
+ * acronym-prefixed identifiers are bionic-fied per sub-word.
+ *
+ * Two passes:
+ *   1. lower/digit → Upper            (catches `useEffect`, `v2Beta`)
+ *   2. Upper → Upper followed by lower (catches `XMLParser` → `XML | Parser`)
+ *
+ * The character sequence is preserved exactly; only an internal NUL marker is
+ * inserted to delimit sub-words and is stripped by the final split. Tokens
+ * with no case boundary (`hello`, `WORD`, `well-known`) round-trip unchanged.
+ *
+ * Note: this function deliberately does NOT split on `-` or `_`. Underscore
+ * splitting is handled upstream by WORD_RE (it is not in the [\p{L}\p{N}]
+ * class). Hyphen splitting is opt-in via the `splitHyphenated` config (S3).
+ */
+export function splitIdentifier(word: string): string[] {
+	const step1 = word.replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, "$1\u0000$2");
+	const step2 = step1.replace(
+		/(\p{Lu})(\p{Lu}\p{Ll})/gu,
+		"$1\u0000$2",
+	);
+	return step2.split("\u0000");
+}
+
 /** True if the candidate token contains at least one unicode letter. */
 const LETTER_RE = /\p{L}/u;
 
@@ -101,6 +133,8 @@ export function bionicifyText(text: string, opts: BionicOptions = {}): string {
 	const fixation = (opts.fixation ?? DEFAULT_OPTIONS.fixation) as Fixation;
 	const minWordLength = opts.minWordLength ?? DEFAULT_OPTIONS.minWordLength;
 	const saccade = Math.max(1, opts.saccade ?? DEFAULT_OPTIONS.saccade);
+	const splitHyphenated =
+		opts.splitHyphenated ?? DEFAULT_OPTIONS.splitHyphenated;
 
 	let result = "";
 	let lastIdx = 0;
@@ -120,48 +154,73 @@ export function bionicifyText(text: string, opts: BionicOptions = {}): string {
 			continue;
 		}
 
-		// Skip words too short to be worth bolding.
-		if (word.length < minWordLength) {
-			result += word;
-			wordIndex++;
-			continue;
-		}
+		// S3 — if splitHyphenated is on, split the matched WORD_RE token on `-`
+		// and emit a literal `-` between the resulting sub-tokens. When off,
+		// segments == [word] and the original behavior (with the right-flanking
+		// hyphen-nudge below) is preserved exactly.
+		const segments = splitHyphenated ? word.split("-") : [word];
 
-		// Saccade: only bold every Nth word.
-		if (wordIndex % saccade !== 0) {
-			result += word;
-			wordIndex++;
-			continue;
-		}
+		for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+			if (segIdx > 0) result += "-";
+			const segment = segments[segIdx];
 
-		let bold = getBoldLength(word, fixation);
+			// S1 — split camelCase / PascalCase / acronym-prefixed identifiers
+			// into sub-words. For non-camel tokens this returns [segment] unchanged.
+			for (const sub of splitIdentifier(segment)) {
+				// Sub-word may be pure-numeric (e.g. `2024Q4` → `2024`, `Q4`).
+				if (!LETTER_RE.test(sub)) {
+					result += sub;
+					continue;
+				}
 
-		// Nudge the bold boundary off of `-` or `'` joiners.
-		//
-		// WORD_RE keeps tokens like `pipefail-sensitive` and `let's-go` as
-		// single words, so the split can land such that the prefix ends in
-		// a hyphen or apostrophe (e.g. `**pipefail-**sensitive`). CommonMark's
-		// right-flanking rule then prevents the closing `**` from closing:
-		// preceded by punctuation, followed by a letter, not right-flanking,
-		// renders as literal asterisks.
-		//
-		// Shifting `bold` inward by one lands the closing `**` between a
-		// letter and the joiner (`**pipefail**-sensitive`), which IS
-		// right-flanking and renders correctly. Word tokens always start
-		// with a letter/digit per WORD_RE, so this loop can't undershoot to 0.
-		while (bold > 0 && (word[bold - 1] === "-" || word[bold - 1] === "'")) {
-			bold--;
-		}
+				// Skip sub-words too short to be worth bolding (S1-AC3).
+				if (sub.length < minWordLength) {
+					result += sub;
+					wordIndex++;
+					continue;
+				}
 
-		if (bold <= 0) {
-			result += word;
-		} else if (bold >= word.length) {
-			// Whole word is bolded (rare — fixation 1, very short word).
-			result += `**${word}**`;
-		} else {
-			result += `**${word.slice(0, bold)}**${word.slice(bold)}`;
+				// Saccade applies per sub-word (S1-AC6).
+				if (wordIndex % saccade !== 0) {
+					result += sub;
+					wordIndex++;
+					continue;
+				}
+
+				let bold = getBoldLength(sub, fixation);
+
+				// Nudge the bold boundary off of `-` or `'` joiners.
+				//
+				// WORD_RE keeps tokens like `pipefail-sensitive` and `let's-go` as
+				// single words when splitHyphenated is off, so the split can land
+				// such that the prefix ends in a hyphen or apostrophe
+				// (e.g. `**pipefail-**sensitive`). CommonMark's right-flanking rule
+				// then prevents the closing `**` from closing: preceded by
+				// punctuation, followed by a letter, not right-flanking, renders as
+				// literal asterisks.
+				//
+				// Shifting `bold` inward by one lands the closing `**` between a
+				// letter and the joiner (`**pipefail**-sensitive`), which IS
+				// right-flanking and renders correctly. Word tokens always start
+				// with a letter/digit per WORD_RE, so this loop can't undershoot to 0.
+				while (
+					bold > 0 &&
+					(sub[bold - 1] === "-" || sub[bold - 1] === "'")
+				) {
+					bold--;
+				}
+
+				if (bold <= 0) {
+					result += sub;
+				} else if (bold >= sub.length) {
+					// Whole sub-word is bolded (rare — fixation 1, very short sub-word).
+					result += `**${sub}**`;
+				} else {
+					result += `**${sub.slice(0, bold)}**${sub.slice(bold)}`;
+				}
+				wordIndex++;
+			}
 		}
-		wordIndex++;
 	}
 	result += text.slice(lastIdx);
 	return result;

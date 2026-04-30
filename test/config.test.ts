@@ -12,6 +12,7 @@ describe("CONFIG_DEFAULTS", () => {
 			minWordLength: 2,
 			saccade: 1,
 			skipHeadings: false,
+			splitHyphenated: false,
 			hotkey: "ctrl+x",
 		});
 	});
@@ -20,6 +21,11 @@ describe("CONFIG_DEFAULTS", () => {
 		// pi-tui rejects cmd/super/meta — guard the default against accidental drift.
 		const hotkey = CONFIG_DEFAULTS.hotkey ?? "";
 		expect(hotkey).not.toMatch(/\b(cmd|super|meta)\+/i);
+	});
+
+	// S3-AC1 — splitHyphenated config field exists with default false.
+	it("defaults `splitHyphenated` to false", () => {
+		expect(CONFIG_DEFAULTS.splitHyphenated).toBe(false);
 	});
 });
 
@@ -82,5 +88,29 @@ describe("loadBionicConfig", () => {
 		);
 		const config = await loadBionicConfig(cwd);
 		expect(config.hotkey).toBe("ctrl+q");
+	});
+
+	// S3-AC6 — splitHyphenated loads from project config and overrides defaults.
+	it("lets project config override `splitHyphenated`", async () => {
+		await mkdir(join(cwd, ".pi"), { recursive: true });
+		await writeFile(
+			join(cwd, ".pi", "bionic.jsonc"),
+			'{ "splitHyphenated": true }\n',
+			"utf-8",
+		);
+		const config = await loadBionicConfig(cwd);
+		expect(config.splitHyphenated).toBe(true);
+	});
+
+	// S4-AC1 — prefixStyle accepted from project config.
+	it("loads `prefixStyle` from project config", async () => {
+		await mkdir(join(cwd, ".pi"), { recursive: true });
+		await writeFile(
+			join(cwd, ".pi", "bionic.jsonc"),
+			'{ "prefixStyle": { "color": "red", "bold": true } }\n',
+			"utf-8",
+		);
+		const config = await loadBionicConfig(cwd);
+		expect(config.prefixStyle).toEqual({ color: "red", bold: true });
 	});
 });
