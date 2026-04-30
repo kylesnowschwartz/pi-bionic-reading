@@ -57,7 +57,7 @@ describe("resolvePrefixStyle", () => {
 				const r = resolvePrefixStyle({ color: name });
 				expect(r.warnings).toEqual([]);
 				expect(r.wrap).not.toBeNull();
-				expect(r.wrap?.("text")).toBe(`\u001b[${code}mtext\u001b[0m`);
+				expect(r.wrap?.("text")).toBe(`\u001b[${code}mtext\u001b[39m`);
 			});
 		}
 	});
@@ -78,7 +78,7 @@ describe("resolvePrefixStyle", () => {
 			it(`color: "${name}" → SGR ${code}`, () => {
 				const r = resolvePrefixStyle({ color: name });
 				expect(r.warnings).toEqual([]);
-				expect(r.wrap?.("x")).toBe(`\u001b[${code}mx\u001b[0m`);
+				expect(r.wrap?.("x")).toBe(`\u001b[${code}mx\u001b[39m`);
 			});
 		}
 	});
@@ -87,17 +87,17 @@ describe("resolvePrefixStyle", () => {
 		it('parses "256:226" as 38;5;226', () => {
 			const r = resolvePrefixStyle({ color: "256:226" });
 			expect(r.warnings).toEqual([]);
-			expect(r.wrap?.("x")).toBe("\u001b[38;5;226mx\u001b[0m");
+			expect(r.wrap?.("x")).toBe("\u001b[38;5;226mx\u001b[39m");
 		});
 
 		it('parses "256:0" (boundary low)', () => {
 			const r = resolvePrefixStyle({ color: "256:0" });
-			expect(r.wrap?.("x")).toBe("\u001b[38;5;0mx\u001b[0m");
+			expect(r.wrap?.("x")).toBe("\u001b[38;5;0mx\u001b[39m");
 		});
 
 		it('parses "256:255" (boundary high)', () => {
 			const r = resolvePrefixStyle({ color: "256:255" });
-			expect(r.wrap?.("x")).toBe("\u001b[38;5;255mx\u001b[0m");
+			expect(r.wrap?.("x")).toBe("\u001b[38;5;255mx\u001b[39m");
 		});
 
 		it('rejects "256:256" (out of range)', () => {
@@ -117,12 +117,12 @@ describe("resolvePrefixStyle", () => {
 		it("parses #ffaa00 as 38;2;255;170;0", () => {
 			const r = resolvePrefixStyle({ color: "#ffaa00" });
 			expect(r.warnings).toEqual([]);
-			expect(r.wrap?.("x")).toBe("\u001b[38;2;255;170;0mx\u001b[0m");
+			expect(r.wrap?.("x")).toBe("\u001b[38;2;255;170;0mx\u001b[39m");
 		});
 
 		it("accepts uppercase #FFAA00", () => {
 			const r = resolvePrefixStyle({ color: "#FFAA00" });
-			expect(r.wrap?.("x")).toBe("\u001b[38;2;255;170;0mx\u001b[0m");
+			expect(r.wrap?.("x")).toBe("\u001b[38;2;255;170;0mx\u001b[39m");
 		});
 
 		it('rejects "#zzzzzz" (non-hex)', () => {
@@ -142,7 +142,7 @@ describe("resolvePrefixStyle", () => {
 		it("parses rgb:255,170,0", () => {
 			const r = resolvePrefixStyle({ color: "rgb:255,170,0" });
 			expect(r.warnings).toEqual([]);
-			expect(r.wrap?.("x")).toBe("\u001b[38;2;255;170;0mx\u001b[0m");
+			expect(r.wrap?.("x")).toBe("\u001b[38;2;255;170;0mx\u001b[39m");
 		});
 
 		it("rejects components > 255", () => {
@@ -178,27 +178,26 @@ describe("resolvePrefixStyle", () => {
 	});
 
 	describe("S4-AC8 — text decorations (bold/italic/underline/dim)", () => {
-		it('bold: true → "\\u001b[1m...\\u001b[0m"', () => {
+		it('bold: true → "\\u001b[1m...\\u001b[22m" (S8: targeted close)', () => {
 			const r = resolvePrefixStyle({ bold: true });
-			expect(r.wrap?.("x")).toBe("\u001b[1mx\u001b[0m");
+			expect(r.wrap?.("x")).toBe("\u001b[1mx\u001b[22m");
 		});
 
-		it('italic: true → "\\u001b[3m...\\u001b[0m"', () => {
+		it('italic: true → "\\u001b[3m...\\u001b[23m" (S8: targeted close)', () => {
 			expect(resolvePrefixStyle({ italic: true }).wrap?.("x")).toBe(
-				"\u001b[3mx\u001b[0m",
+				"\u001b[3mx\u001b[23m",
 			);
 		});
 
-		it('underline: true → "\\u001b[4m...\\u001b[0m"', () => {
+		it('underline: true → "\\u001b[4m...\\u001b[24m" (S8: targeted close)', () => {
 			expect(resolvePrefixStyle({ underline: true }).wrap?.("x")).toBe(
-				"\u001b[4mx\u001b[0m",
+				"\u001b[4mx\u001b[24m",
 			);
 		});
 
-		it('dim: true → "\\u001b[2m...\\u001b[0m"', () => {
-			// Reference case from SPEC table.
+		it('dim: true → "\\u001b[2m...\\u001b[22m" (S8: targeted close)', () => {
 			expect(resolvePrefixStyle({ dim: true }).wrap?.("x")).toBe(
-				"\u001b[2mx\u001b[0m",
+				"\u001b[2mx\u001b[22m",
 			);
 		});
 	});
@@ -207,17 +206,17 @@ describe("resolvePrefixStyle", () => {
 		it("color: red + bold: true → 31;1", () => {
 			// Reference case from SPEC table.
 			const r = resolvePrefixStyle({ color: "red", bold: true });
-			expect(r.wrap?.("text")).toBe("\u001b[31;1mtext\u001b[0m");
+			expect(r.wrap?.("text")).toBe("\u001b[31;1mtext\u001b[39;22m");
 		});
 
 		it("multi-decoration: bold + underline → 1;4", () => {
 			const r = resolvePrefixStyle({ bold: true, underline: true });
-			expect(r.wrap?.("x")).toBe("\u001b[1;4mx\u001b[0m");
+			expect(r.wrap?.("x")).toBe("\u001b[1;4mx\u001b[22;24m");
 		});
 
 		it("color hex + dim → 38;2;...;2", () => {
 			const r = resolvePrefixStyle({ color: "#ffaa00", dim: true });
-			expect(r.wrap?.("x")).toBe("\u001b[38;2;255;170;0;2mx\u001b[0m");
+			expect(r.wrap?.("x")).toBe("\u001b[38;2;255;170;0;2mx\u001b[39;22m");
 		});
 	});
 
@@ -250,24 +249,108 @@ describe("resolvePrefixStyle", () => {
 		});
 	});
 
-	describe("S4-AC7 — close is always the universal reset \\u001b[0m", () => {
-		const styles = [
-			{ color: "red" },
-			{ color: "#ffaa00" },
-			{ color: "256:226" },
-			{ bold: true },
-			{ dim: true },
-			{ italic: true, underline: true },
-			{ ansi: "\u001b[7m" },
-			{ color: "red", bold: true, underline: true },
-		];
-		for (const style of styles) {
-			it(`close is \\u001b[0m for ${JSON.stringify(style)}`, () => {
-				const wrapped = resolvePrefixStyle(style).wrap?.("x");
-				expect(wrapped).toBeDefined();
-				expect(wrapped).toMatch(/\u001b\[0m$/);
+	describe("S8 — targeted SGR closes preserve host attributes", () => {
+		// S8 supersedes S4-AC7 for structured fields.  We close only the bits
+		// the wrapper opened so the host's background color (and anything else
+		// it set on the line) survives.  The `ansi` escape hatch is the one
+		// exception — we don't know what the user's escape opened, so we keep
+		// the universal reset.
+
+		describe("S8-AC1 — single-attribute targeted closes", () => {
+			const cases: Array<[string, object, string]> = [
+				["bold", { bold: true }, "\u001b[22m"],
+				["dim", { dim: true }, "\u001b[22m"],
+				["italic", { italic: true }, "\u001b[23m"],
+				["underline", { underline: true }, "\u001b[24m"],
+				["color (named)", { color: "red" }, "\u001b[39m"],
+				["color (hex)", { color: "#ffaa00" }, "\u001b[39m"],
+				["color (256)", { color: "256:226" }, "\u001b[39m"],
+				["color (rgb)", { color: "rgb:1,2,3" }, "\u001b[39m"],
+			];
+			for (const [label, style, expectedClose] of cases) {
+				it(`close for ${label} is ${JSON.stringify(expectedClose)} (NOT \\u001b[0m)`, () => {
+					const wrapped = resolvePrefixStyle(style).wrap?.("x");
+					expect(wrapped).toBeDefined();
+					expect(wrapped?.endsWith(expectedClose)).toBe(true);
+					expect(wrapped).not.toMatch(/\u001b\[0m$/);
+				});
+			}
+		});
+
+		describe("S8-AC2 — bold + dim dedupe to a single 22 in the close", () => {
+			it("{ bold: true, dim: true } closes with one 22, not two", () => {
+				const wrapped = resolvePrefixStyle({
+					bold: true,
+					dim: true,
+				}).wrap?.("x");
+				expect(wrapped).toBe("\u001b[1;2mx\u001b[22m");
 			});
-		}
+		});
+
+		describe("S8-AC3 — deterministic close order: 39, 22, 23, 24", () => {
+			it("all four attributes plus color: open then matching reverse-order close", () => {
+				const wrapped = resolvePrefixStyle({
+					color: "red",
+					bold: true,
+					italic: true,
+					underline: true,
+				}).wrap?.("x");
+				expect(wrapped).toBe("\u001b[31;1;3;4mx\u001b[39;22;23;24m");
+			});
+
+			it("color + dim closes in canonical order (39 before 22)", () => {
+				const wrapped = resolvePrefixStyle({
+					color: "red",
+					dim: true,
+				}).wrap?.("x");
+				expect(wrapped).toBe("\u001b[31;2mx\u001b[39;22m");
+			});
+
+			it("italic + underline closes in 23;24 order", () => {
+				const wrapped = resolvePrefixStyle({
+					italic: true,
+					underline: true,
+				}).wrap?.("x");
+				expect(wrapped).toBe("\u001b[3;4mx\u001b[23;24m");
+			});
+		});
+
+		describe("S8-AC4 — raw `ansi` escape hatch keeps the universal reset", () => {
+			it("ansi alone closes with \\u001b[0m", () => {
+				const wrapped = resolvePrefixStyle({
+					ansi: "\u001b[7m",
+				}).wrap?.("x");
+				expect(wrapped).toBe("\u001b[7mx\u001b[0m");
+			});
+
+			it("ansi + ignored structured fields still closes with \\u001b[0m", () => {
+				const wrapped = resolvePrefixStyle({
+					ansi: "\u001b[X",
+					color: "red",
+					bold: true,
+				}).wrap?.("x");
+				expect(wrapped).toBe("\u001b[Xx\u001b[0m");
+			});
+		});
+
+		describe("S8-AC1 — background-color survival (the QA bug)", () => {
+			it("the wrap output does not contain \\u001b[0m anywhere when only structured fields are used", () => {
+				// This is the structural property that prevents the host's
+				// background from being clobbered. If a future regression reintroduces
+				// `\u001b[0m` into the close path, this test fires.
+				const styles = [
+					{ color: "red" },
+					{ underline: true },
+					{ color: "red", bold: true, underline: true },
+					{ color: "#ffaa00", dim: true },
+				];
+				for (const style of styles) {
+					const wrapped = resolvePrefixStyle(style).wrap?.("x");
+					expect(wrapped).toBeDefined();
+					expect(wrapped).not.toContain("\u001b[0m");
+				}
+			});
+		});
 	});
 });
 
@@ -470,7 +553,7 @@ describe("decideStyleApplication", () => {
 			const d = decideStyleApplication({ color: "red" });
 			expect(d.apply).toBe(true);
 			expect(d.warnings).toEqual([]);
-			expect(d.wrap?.("x")).toBe("\u001b[31mx\u001b[0m");
+			expect(d.wrap?.("x")).toBe("\u001b[31mx\u001b[39m");
 		});
 
 		it("invalid color alone → apply=false, warning surfaced", () => {
@@ -532,8 +615,8 @@ describe("decideStyleApplication", () => {
 			});
 			expect(d.apply).toBe(false);
 			// `wrap` reflects what would have happened: bold-only since the bad
-			// color contributed nothing.
-			expect(d.wrap?.("x")).toBe("\u001b[1mx\u001b[0m");
+			// color contributed nothing. Targeted close per S8.
+			expect(d.wrap?.("x")).toBe("\u001b[1mx\u001b[22m");
 		});
 	});
 });

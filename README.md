@@ -85,7 +85,10 @@ Create `~/.pi/bionic.jsonc` (user-level) or `<project>/.pi/bionic.jsonc` (projec
   //   underline: SGR 4
   //   dim      : SGR 2
   //   ansi     : raw escape-sequence escape hatch — wins over the above.
-  //              Close is always \u001b[0m.
+  //              Close is always \u001b[0m. Use this only if you know your
+  //              terminal will absorb the universal reset cleanly; structured
+  //              fields (above) emit targeted SGR closes that preserve the
+  //              host's background color and other line-level attributes.
   //
   // Side-effect: while bionic is on, this style also applies to user-authored
   // **bold** literals in assistant messages (the override targets theme.bold).

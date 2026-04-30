@@ -122,8 +122,12 @@ function parseColor(value: string): ParsedColor {
  * - Returns `{ wrap: null, warnings: [...] }` when no usable style is
  *   present after validation (S4-AC5).
  * - When `ansi` is set, that escape sequence is used verbatim and structured
- *   fields are ignored (S4-AC2).
- * - The close is always `\u001b[0m` (S4-AC7).
+ *   fields are ignored (S4-AC2). The close is `\u001b[0m` (S8-AC4) since we
+ *   can't generate a matching targeted close for an arbitrary escape.
+ * - For structured fields, the close is a TARGETED SGR sequence that turns
+ *   off only the attributes we opened (S8-AC1). The host's background
+ *   color and any other SGR state survives. Order: 39 → 22 → 23 → 24
+ *   (S8-AC3); 22 emitted once even when both bold and dim are set (S8-AC2).
  *
  * Pure function: no I/O, never throws (S4-AC6).
  */
@@ -143,26 +147,55 @@ export function resolvePrefixStyle(
 
 	const codes: string[] = [];
 	const warnings: string[] = [];
+	let hasColor = false;
+	let hasIntensity = false; // bold OR dim (both close with 22)
+	let hasItalic = false;
+	let hasUnderline = false;
 
 	if (style.color) {
 		const parsed = parseColor(style.color);
 		if (parsed.warning) warnings.push(parsed.warning);
-		if (parsed.codes !== null) codes.push(parsed.codes);
+		if (parsed.codes !== null) {
+			codes.push(parsed.codes);
+			hasColor = true;
+		}
 	}
 
 	// SGR attributes — pushed in canonical numeric order so output is stable.
-	if (style.bold) codes.push("1");
-	if (style.dim) codes.push("2");
-	if (style.italic) codes.push("3");
-	if (style.underline) codes.push("4");
+	if (style.bold) {
+		codes.push("1");
+		hasIntensity = true;
+	}
+	if (style.dim) {
+		codes.push("2");
+		hasIntensity = true; // S8-AC2: shares 22 close with bold
+	}
+	if (style.italic) {
+		codes.push("3");
+		hasItalic = true;
+	}
+	if (style.underline) {
+		codes.push("4");
+		hasUnderline = true;
+	}
 
 	if (codes.length === 0) {
 		return { wrap: null, warnings };
 	}
 
+	// S8-AC1/AC2/AC3: build targeted close from only the bits we opened, in
+	// deterministic order: foreground (39), intensity (22, deduped), italic
+	// (23), underline (24).
+	const closeCodes: string[] = [];
+	if (hasColor) closeCodes.push("39");
+	if (hasIntensity) closeCodes.push("22");
+	if (hasItalic) closeCodes.push("23");
+	if (hasUnderline) closeCodes.push("24");
+
 	const open = `\u001b[${codes.join(";")}m`;
+	const close = `\u001b[${closeCodes.join(";")}m`;
 	return {
-		wrap: (text: string) => `${open}${text}${RESET}`,
+		wrap: (text: string) => `${open}${text}${close}`,
 		warnings,
 	};
 }
