@@ -5,6 +5,25 @@ All notable changes to `pi-bionic-reading` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Unified rejection-toast format.** Every `/bionic` rejection toast now
+  follows one template: `[bionic] /bionic <subcmd>: <reason>; valid options:
+  <list>`. The previous mix — parser-level `usage: /bionic color <forms>`,
+  validator-level `prefixStyle.color: unrecognized color "X"`, and a
+  cryptic `[...]` POSIX-repetition mark on `style` — has been replaced with
+  a single shape so the language and structure match across surfaces.
+  Validator warnings reframe their `prefixStyle.color:` prefix to
+  `/bionic color:` so the toast cites what the user typed, not the JSONC
+  config key. The `style` toast spells out the multi-token affordance
+  explicitly ("one or more, space-separated") instead of `[...]`. The
+  motivating case — `/bionic color off` — now reads `[bionic] /bionic`
+  `color: unrecognized color "off"; valid options:`
+  `<name|#hex|256:N|rgb:R,G,B|none>`, surfacing the `none` clear-sentinel
+  the user couldn't recall.
+
 ## [0.3.0] — 2025
 
 ### Added

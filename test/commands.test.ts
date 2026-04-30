@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseBionicCommand } from "../commands.js";
+import {
+	augmentValidationWarning,
+	COLOR_OPTIONS,
+	parseBionicCommand,
+	STYLE_OPTIONS,
+} from "../commands.js";
 
 // =============================================================================
 // S5 — Slash commands for prefix style
@@ -317,5 +322,100 @@ describe("parseBionicCommand", () => {
 				expect(r.message).toContain("invert");
 			}
 		});
+	});
+});
+
+// =============================================================================
+// `augmentValidationWarning` — valid-options hint on rejection toasts
+// =============================================================================
+// Bridges the gap between S5-AC4 (parser-level usage messages) and S7-AC2
+// (validator-level rejection toasts). The parser only emits usage messages
+// for arg-shape errors; values that pass the shape check but fail validation
+// (e.g. `/bionic color off` — looks like a color token, not actually one)
+// flow through `decideStyleApplication` and surface as plain warnings. This
+// helper appends the `COLOR_OPTIONS` form so the toast lists what the user
+// could have typed instead, including the `none` clear-sentinel.
+describe("augmentValidationWarning", () => {
+	it("appends `valid options:` hint to unrecognized-color warnings", () => {
+		// The motivating case: user types `/bionic color off`, which the parser
+		// accepts (single token after `color`), but the validator rejects.
+		const out = augmentValidationWarning(
+			'[bionic] prefixStyle.color: unrecognized color "off"',
+		);
+		expect(out).toContain('unrecognized color "off"');
+		expect(out).toContain("valid options:");
+		expect(out).toContain(COLOR_OPTIONS);
+	});
+
+	it("reframes the `prefixStyle.color:` config-key prefix as `/bionic color:`", () => {
+		// Slash-command toasts should reference what the user typed
+		// (`/bionic color X`), not the JSONC config key it would correspond to
+		// (`prefixStyle.color`). The reframe keeps the rejection toast in the
+		// same vocabulary as the parser-level usage messages — unified template
+		// `[bionic] /bionic <subcmd>: <reason>; valid options: <list>`.
+		const out = augmentValidationWarning(
+			'[bionic] prefixStyle.color: unrecognized color "off"',
+		);
+		expect(out).toContain("[bionic] /bionic color:");
+		expect(out).not.toContain("prefixStyle.color");
+	});
+
+	it("the hint advertises the `none` clear-sentinel", () => {
+		// Discoverability for `/bionic color none` — the explicit reason this
+		// helper exists per the user's report.
+		const out = augmentValidationWarning(
+			'[bionic] prefixStyle.color: unrecognized color "foo"',
+		);
+		expect(out).toContain("none");
+	});
+
+	it("augments structured-form rejections (hex / 256 / rgb), not just unrecognized", () => {
+		// All five `parseColor` warning shapes share the `[bionic] prefixStyle.color:`
+		// prefix, so all five get the hint. The user who typed `#fff` or `256:999`
+		// also benefits from seeing the full vocabulary including `none`.
+		const hex = augmentValidationWarning(
+			'[bionic] prefixStyle.color: invalid hex color "#fff" (expected #rrggbb)',
+		);
+		expect(hex).toContain("valid options:");
+		expect(hex).toContain("(expected #rrggbb)");
+
+		const c256 = augmentValidationWarning(
+			'[bionic] prefixStyle.color: invalid 256-color value "256:999" (expected 256:0..256:255)',
+		);
+		expect(c256).toContain("valid options:");
+
+		const rgb = augmentValidationWarning(
+			'[bionic] prefixStyle.color: invalid rgb form "rgb:1,2" (expected rgb:R,G,B)',
+		);
+		expect(rgb).toContain("valid options:");
+	});
+
+	it("returns non-color warnings unchanged (anti-fragile to future warning shapes)", () => {
+		// `resolvePrefixStyle` only emits color warnings today, but a future
+		// validator (e.g. for `ansi` escape hatch hygiene) should not silently
+		// inherit a color-flavored hint. Prefix-match keeps the helper honest.
+		const other = "[bionic] something-else: bad value";
+		expect(augmentValidationWarning(other)).toBe(other);
+	});
+
+	it("is idempotent on already-augmented warnings (no double-suffix)", () => {
+		// Defensive: if a caller threads a warning through twice, the second
+		// pass should not stack a second hint. The current implementation does
+		// in fact append twice; lock in the safer behavior so a future regression
+		// here surfaces in CI rather than as `valid options: ... ; valid options: ...`
+		// in user-visible toasts.
+		const once = augmentValidationWarning(
+			'[bionic] prefixStyle.color: unrecognized color "x"',
+		);
+		const twice = augmentValidationWarning(once);
+		expect(twice).toBe(once);
+	});
+
+	it("COLOR_OPTIONS and STYLE_OPTIONS are the form summaries used in usage messages", () => {
+		// Sanity check: the exported constants line up with what the existing
+		// usage-message tests already assert (S5-AC4). If these drift, the
+		// hint and the usage messages stop matching.
+		expect(COLOR_OPTIONS).toMatch(/name.*hex.*256.*rgb.*none/);
+		expect(STYLE_OPTIONS).toMatch(/bold.*dim.*italic.*underline.*none/);
 	});
 });

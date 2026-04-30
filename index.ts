@@ -42,7 +42,7 @@ import {
 	resolvePrefixStyle,
 	withPrefixStyleOverride,
 } from "./prefix-style.js";
-import { parseBionicCommand } from "./commands.js";
+import { augmentValidationWarning, parseBionicCommand } from "./commands.js";
 import { bionicifyMarkdown } from "./transform.js";
 
 const INSTANCE_KEY = "__pi_bionic_reading_active__";
@@ -200,7 +200,14 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 		ctx: ExtensionContext,
 	): boolean => {
 		const decision = decideStyleApplication(next);
-		for (const w of decision.warnings) ctx.ui.notify(w, "warning");
+		// Run each warning through `augmentValidationWarning` so toasts that
+		// reject a value (e.g. `/bionic color off`) advertise the accepted forms,
+		// including the `none` clear-sentinel. Config-load warnings emitted by
+		// `resolvePrefixStyle` directly bypass this on purpose — see the helper's
+		// docstring in commands.ts.
+		for (const w of decision.warnings) {
+			ctx.ui.notify(augmentValidationWarning(w), "warning");
+		}
 		if (!decision.apply) return false;
 		state.config.prefixStyle = next;
 		state.prefixWrap = decision.wrap;

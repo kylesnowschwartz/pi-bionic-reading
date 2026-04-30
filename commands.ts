@@ -31,12 +31,29 @@ export type BionicCommand =
 const FIXATION_RE = /^[1-5]$/;
 const STYLE_TOKENS = ["bold", "dim", "italic", "underline"] as const;
 
+/**
+ * Form summaries for the slash-command argument vocabulary. Shared by the
+ * usage messages below AND by `augmentValidationWarning` so the same string
+ * surfaces both when the parser rejects an arg shape (e.g. `/bionic color`
+ * with no value) and when the dispatcher rejects a value (e.g.
+ * `/bionic color off` — parser accepts the shape, validator rejects the
+ * value). Keeps the two surfaces from drifting.
+ */
+export const COLOR_OPTIONS = "<name|#hex|256:N|rgb:R,G,B|none>";
+export const STYLE_OPTIONS = "<bold|dim|italic|underline|none>";
+
+// Unified template across every rejection toast: `[bionic] /bionic <subcmd>:
+// <reason>; valid options: <list>`. Same shape used by `augmentValidationWarning`
+// when reframing prefix-style validator warnings, so the parser and validator
+// surfaces don't drift in tone or structure (S5-AC4).
+//
+// `style` ends in an explicit "(one or more, space-separated)" hint instead of
+// the cryptic `[...]` POSIX repetition mark — the latter reads as ellipsis to
+// most users and obscures the multi-token affordance (`/bionic style bold underline`).
 const USAGE_TOPLEVEL =
-	"[bionic] usage: /bionic [on|off|toggle|1..5|invert|color <value>|style <tokens>]";
-const USAGE_COLOR =
-	"[bionic] usage: /bionic color <name|#hex|256:N|rgb:R,G,B|none>";
-const USAGE_STYLE =
-	"[bionic] usage: /bionic style <bold|dim|italic|underline|none> [...]";
+	"[bionic] /bionic: unknown subcommand; valid options: on|off|toggle|1..5|invert|color <value>|style <tokens>";
+const USAGE_COLOR = `[bionic] /bionic color: missing or invalid value; valid options: ${COLOR_OPTIONS}`;
+const USAGE_STYLE = `[bionic] /bionic style: missing or invalid token; valid options: ${STYLE_OPTIONS} (one or more, space-separated)`;
 
 export function parseBionicCommand(rawArgs: string): BionicCommand {
 	const trimmed = rawArgs.trim();
@@ -125,4 +142,41 @@ export function parseBionicCommand(rawArgs: string): BionicCommand {
 	}
 
 	return { kind: "usage", message: USAGE_TOPLEVEL };
+}
+
+/**
+ * Reframe a `[bionic] prefixStyle.*` validation warning as a slash-command
+ * rejection toast: rewrite the config-key prefix (`prefixStyle.color`) to
+ * the slash-command form (`/bionic color`) and append a `valid options:`
+ * hint listing the accepted forms.
+ *
+ * Bridges the gap left by S5-AC4 / S7-AC2: the parser accepts arg shapes
+ * like `/bionic color off` (one whitespace-free token after `color`), so
+ * the rejection happens later in `decideStyleApplication`. Without this
+ * helper the resulting toast (a) cites a JSONC config key the user never
+ * typed and (b) gives no hint about the accepted forms — in particular the
+ * `none` clear-sentinel, which is easy to forget. The dispatcher in
+ * `index.ts` calls this on every warning before forwarding to
+ * `ctx.ui.notify`, so all rejection toasts share the unified template
+ * `[bionic] /bionic <subcmd>: <reason>; valid options: <list>`.
+ *
+ * Pure function. Returns the input unchanged when no rule matches and is
+ * idempotent on already-augmented warnings (re-running it does not stack a
+ * second hint). Config-load warnings (logged via `console.warn` from
+ * `resolvePrefixStyle` directly) bypass this path on purpose: a
+ * bionic.jsonc edit is not a slash command, so the slash-command syntax
+ * `none` would be misleading there.
+ */
+export function augmentValidationWarning(warning: string): string {
+	const suffix = `; valid options: ${COLOR_OPTIONS}`;
+	// Idempotency guard: a re-augmented warning already ends with the suffix.
+	if (warning.endsWith(suffix)) return warning;
+
+	const CONFIG_PREFIX = "[bionic] prefixStyle.color:";
+	const SLASH_PREFIX = "[bionic] /bionic color:";
+	if (warning.startsWith(CONFIG_PREFIX)) {
+		const reframed = SLASH_PREFIX + warning.slice(CONFIG_PREFIX.length);
+		return `${reframed}${suffix}`;
+	}
+	return warning;
 }
