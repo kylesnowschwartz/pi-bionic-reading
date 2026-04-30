@@ -137,64 +137,6 @@ to the same SGR code as `brightBlack`. The rejection toast for an
 unrecognized name lists this set inline so you can pick a substitute
 without leaving the editor.
 
-### Configuration examples
-
-Drop any of these into `~/.pi/bionic.jsonc` (user-level) or
-`<project>/.pi/bionic.jsonc` (project-level). Project values override user
-values; both layers merge over the defaults.
-
-**1. Make the bionic prefix vivid red on a dark terminal:**
-
-```jsonc
-{ "prefixStyle": { "color": "red", "bold": true } }
-```
-
-**2. Use a 256-color amber that survives most palettes:**
-
-```jsonc
-{ "prefixStyle": { "color": "256:208" } }
-```
-
-**3. Truecolor hex — only works on terminals with truecolor support:**
-
-```jsonc
-{ "prefixStyle": { "color": "#ffaa00" } }
-```
-
-**4. No color, just dim the prefix — inverts the usual contrast (prefix is
-the *quiet* part, rest of the word is the *loud* part):**
-
-```jsonc
-{ "prefixStyle": { "dim": true } }
-```
-
-**5. Read a lot of code-heavy assistant prose? Turn on hyphen splitting and
-use a contrast-friendly color:**
-
-```jsonc
-{
-  "splitHyphenated": true,
-  "prefixStyle": { "color": "brightWhite", "bold": true }
-}
-```
-
-**6. Lightest fixation (bold ~30%) plus underline so the cue is visible
-without dominating the line:**
-
-```jsonc
-{
-  "fixation": 5,
-  "prefixStyle": { "underline": true }
-}
-```
-
-**7. Raw ANSI escape hatch — useful if your terminal has a custom palette
-you want to target precisely:**
-
-```jsonc
-{ "prefixStyle": { "ansi": "\u001b[38;5;226;1m" } }
-```
-
 ### Per-theme presets (prototype)
 
 Different terminal themes call for different bionic settings: a vivid red
@@ -227,49 +169,35 @@ theme.
 }
 ```
 
-**How the active kind is resolved.** Two paths run in parallel:
+**Active kind resolution.** The kind is read live from `ctx.ui.theme.name`
+on every render, so flipping pi's theme — via [the-themer](https://github.com/kylesnowschwartz/the-themer)'s
+`/light` / `/dark`, `ctx.ui.setTheme()`, or any other extension — re-layers
+the matching preset on the next render. No restart required.
 
-*Boot-time* (when the extension first loads), file-based:
+At boot, before pi's theme is available, the kind comes from (in order):
+`themeKind` in `bionic.jsonc`, the `theme` field in
+`<cwd>/.pi/settings.json` or `~/.pi/agent/settings.json`, the `COLORFGBG`
+env var, then `"dark"` as a hard fallback (matching pi).
 
-1. `themeKind: "light"` or `themeKind: "dark"` in `bionic.jsonc` — manual pin.
-2. `theme` field in `<cwd>/.pi/settings.json` — pi's project-level setting.
-3. `theme` field in `~/.pi/agent/settings.json` — pi's global setting.
-4. `COLORFGBG` environment variable (some terminals export `fg;bg`).
-5. `"dark"` — same hard fallback pi uses.
+A manual `themeKind: "light"` or `"dark"` pin overrides everything — even
+later live flips — so a `the-themer switch` or `/dark` from another
+extension will not move the bionic preset. Use it to keep your bionic
+style decoupled from pi's terminal theme. Theme-name classification
+mirrors pi's `isLightTheme()`: only the literal name `"light"` buckets
+to light; anything else (custom themes included) is treated as dark, so
+pin `themeKind` explicitly if you have a custom light theme.
 
-*Live* (every render thereafter), API-based:
+**Merge semantics:** the matching preset shallow-merges over the base —
+keys the preset omits keep the base value, but a `prefixStyle` set in the
+preset *replaces* the base `prefixStyle` object as a whole rather than
+deep-merging.
 
-- `ctx.ui.theme.name` from pi's `ExtensionContext`. When this changes —
-  whether via [the-themer](https://github.com/kylesnowschwartz/the-themer)'s
-  `/light` / `/dark` slash commands, an external `the-themer switch <name>`,
-  or any other extension calling `ctx.ui.setTheme()` — the matching preset
-  is re-layered on the next render. No restart required.
-
-If a manual `themeKind: "light"` or `themeKind: "dark"` pin is set, it wins
-over both paths — the live read becomes inert, so a `the-themer switch` or
-`/dark` from another extension will not flip the bionic preset. Use this
-to keep your bionic style decoupled from pi's terminal theme.
-
-Theme name classification mirrors pi's `isLightTheme()`: a name match
-against the literal `"light"` is the only thing that buckets to light;
-every other name (including custom themes) is treated as dark. Pin
-`themeKind` explicitly if you have a custom light theme.
-
-**Merge semantics:** the matching preset replaces matching keys at the top
-level. A preset that sets `prefixStyle` replaces the base `prefixStyle`
-object as a whole — it does not deep-merge with it. Keys the preset omits
-keep the base value.
-
-**Limitations of this prototype:**
-
-- Live commands (`/bionic color`, `/bionic style`) mutate the active config
-  but are session-only and don't write to per-theme blocks. A subsequent
-  theme flip rebuilds from `bionic.jsonc` + the new preset, so live tweaks
-  are intentionally clobbered on flip — same "session-only" semantics as
-  the existing slash commands.
-- The live read of `ctx.ui.theme.name` only fires when a `Markdown`
-  component re-renders. Pi normally requests a render on theme change
-  (`ctx.ui.requestRender()`), so this is invisible in practice.
+**Limitations.** Live commands (`/bionic color`, `/bionic style`) mutate
+the active session but don't write to per-theme blocks; a theme flip
+rebuilds from `bionic.jsonc` + the new preset, clobbering live tweaks
+(same session-only semantics as the rest of the slash commands). The live
+theme read fires only when a `Markdown` component re-renders, which pi
+normally triggers on theme change.
 
 ### Slash commands vs. file persistence
 
@@ -292,7 +220,11 @@ The `/bionic` toast (e.g. `[bionic] enabled (fixation 3)`) is your confirmation 
 2. **Key swallowed upstream.** Tmux leaders, terminal-emulator menu shortcuts, and macOS system shortcuts all consume keystrokes before pi's stdin sees them. `Ctrl+B` under tmux's default leader, for example, never reaches pi.
 3. **Cmd-based shortcut.** pi-tui only recognises `ctrl`/`shift`/`alt` modifiers, and TTYs on macOS can't see Cmd at all. Anything starting with `cmd+` won't work.
 
-**Note on the default `ctrl+x`.** Recent pi versions bind `ctrl+x` to `app.models.clearAll` inside the model-selector overlay (the surface you open with `Ctrl+L`). This is a *soft* conflict (`restrictOverride: false`): the runner logs `Extension shortcut conflict: 'ctrl+x' is built-in shortcut for app.models.clearAll and … Using …/index.ts.` at startup, then hands the binding to this extension. The toggle works in the editor as expected; the only effect is that pressing `Ctrl+X` inside the model selector toggles bionic instead of clearing models. If you'd rather avoid the diagnostic line and keep the model-selector default, set `"hotkey": "ctrl+\\"` (or any other free key) in `bionic.jsonc`.
+**Note on the default `ctrl+x`.** Recent pi versions bind `ctrl+x` to `app.models.clearAll` inside the model-selector overlay (opened with `Ctrl+L`). This is a *soft* conflict (`restrictOverride: false`): the runner logs `Extension shortcut conflict: 'ctrl+x' is built-in shortcut for app.models.clearAll …` at startup, then hands the binding to this extension. In practice:
+
+- Toggling bionic with `Ctrl+X` works as expected in the editor.
+- Inside the model selector, `Ctrl+X` toggles bionic instead of clearing models.
+- To suppress the diagnostic and keep the model-selector default, set `"hotkey": "ctrl+\\"` (or any other free key) in `bionic.jsonc`.
 
 ## How it works
 
