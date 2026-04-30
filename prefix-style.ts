@@ -260,6 +260,23 @@ export function applyClearStyle(current: PrefixStyle): PrefixStyle {
 }
 
 /**
+ * Remove the `color` field from a `PrefixStyle`, leaving every other
+ * field (decorations, `ansi` escape hatch) intact.
+ *
+ * Used by the `/bionic color none` slash command to drop a color override
+ * without touching the rest of the style. After this runs, when the result
+ * has no `color`, no `ansi`, and no truthy decoration, `resolvePrefixStyle`
+ * returns `wrap: null` and the renderer falls through to the host's
+ * `theme.bold` (S4-AC3) — i.e. the terminal's default foreground.
+ *
+ * Pure: returns a new object, never mutates the input.
+ */
+export function applyClearColor(current: PrefixStyle): PrefixStyle {
+	const { color: _color, ...rest } = current;
+	return rest;
+}
+
+/**
  * Decision returned by `decideStyleApplication`. Callers MUST gate on
  * `apply` before reading `wrap`; the wrap value when `apply` is false
  * reflects whatever survived partial validation and is intentionally

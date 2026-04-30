@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	applyClearColor,
 	applyClearStyle,
 	applyToggleStyle,
 	decideStyleApplication,
@@ -531,6 +532,69 @@ describe("applyClearStyle", () => {
 			expect(input).toEqual({ color: "red", bold: true });
 			expect(output).not.toBe(input);
 		});
+	});
+});
+
+// `applyClearColor` is the pure helper behind `/bionic color none`. It must
+// drop only the `color` field and leave decorations / `ansi` untouched. The
+// dispatcher then runs the result through `decideStyleApplication`; an empty
+// result resolves to `wrap: null` and the renderer falls through to the host
+// `theme.bold` (S4-AC3 — i.e. terminal default foreground).
+describe("applyClearColor", () => {
+	it("drops color, preserves decorations", () => {
+		expect(
+			applyClearColor({
+				color: "red",
+				bold: true,
+				underline: true,
+			}),
+		).toEqual({ bold: true, underline: true });
+	});
+
+	it("drops color, preserves ansi escape hatch", () => {
+		// `ansi` wins over structured fields per S4-AC2. Clearing color
+		// should not touch the escape hatch — different concern.
+		expect(
+			applyClearColor({ color: "red", ansi: "\u001b[X" }),
+		).toEqual({ ansi: "\u001b[X" });
+	});
+
+	it("is a no-op when color is already absent", () => {
+		expect(applyClearColor({ bold: true })).toEqual({ bold: true });
+		expect(applyClearColor({})).toEqual({});
+	});
+
+	it("is idempotent (applying twice equals applying once)", () => {
+		const once = applyClearColor({ color: "red", bold: true });
+		const twice = applyClearColor(once);
+		expect(twice).toEqual(once);
+	});
+
+	it("is a pure function (does not mutate input)", () => {
+		const input = { color: "red", bold: true };
+		const output = applyClearColor(input);
+		expect(input).toEqual({ color: "red", bold: true });
+		expect(output).not.toBe(input);
+	});
+
+	it("empty result resolves to wrap:null (falls through to theme.bold)", () => {
+		// Integration sanity check: clearing color from a color-only style
+		// produces the same effect as never having set prefixStyle at all.
+		const cleared = applyClearColor({ color: "red" });
+		const decision = decideStyleApplication(cleared);
+		expect(decision.apply).toBe(true);
+		expect(decision.wrap).toBeNull();
+		expect(decision.warnings).toEqual([]);
+	});
+
+	it("non-empty decoration result still produces a wrap", () => {
+		// Clearing color while bold remains keeps the prefix bold; only
+		// the foreground SGR is gone.
+		const cleared = applyClearColor({ color: "red", bold: true });
+		const decision = decideStyleApplication(cleared);
+		expect(decision.apply).toBe(true);
+		expect(decision.wrap).not.toBeNull();
+		expect(decision.wrap?.("x")).toBe("\u001b[1mx\u001b[22m");
 	});
 });
 

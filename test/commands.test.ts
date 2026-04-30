@@ -105,6 +105,58 @@ describe("parseBionicCommand", () => {
 		});
 	});
 
+	describe("`/bionic color none` — clear-color sentinel", () => {
+		// Mirrors `/bionic style none`: the parser emits a dedicated action
+		// shape so the dispatcher can drop the color key from prefixStyle.
+		// The visible effect is fall-through to host `theme.bold` (S4-AC3).
+		it('"color none" → clear-color', () => {
+			expect(parseBionicCommand("color none")).toEqual({
+				kind: "clear-color",
+			});
+		});
+
+		it("is case-insensitive on the sentinel (None / NONE / nOnE)", () => {
+			// Real color values are case-preserving (`#FFAA00`, `brightWhite`)
+			// but `none` is a keyword, not a value. Lowercase the comparison.
+			expect(parseBionicCommand("color None")).toEqual({
+				kind: "clear-color",
+			});
+			expect(parseBionicCommand("color NONE")).toEqual({
+				kind: "clear-color",
+			});
+			expect(parseBionicCommand("color nOnE")).toEqual({
+				kind: "clear-color",
+			});
+		});
+
+		it('"color none extra" → usage (cannot be combined)', () => {
+			// Mirrors `/bionic style none <other>` rejection: combining the
+			// clear sentinel with another token is ambiguous — reject.
+			const r = parseBionicCommand("color none extra");
+			expect(r.kind).toBe("usage");
+		});
+
+		it("`none` does not collide with the literal color name", () => {
+			// `none` is not in NAMED_COLORS, so this is purely additive —
+			// no recognized color value is being shadowed by the sentinel.
+			// Sanity-check the four real shapes still parse to set-color.
+			expect(parseBionicCommand("color red").kind).toBe("set-color");
+			expect(parseBionicCommand("color #abcdef").kind).toBe("set-color");
+			expect(parseBionicCommand("color 256:42").kind).toBe("set-color");
+			expect(parseBionicCommand("color rgb:1,2,3").kind).toBe("set-color");
+		});
+
+		it("usage message advertises the new `none` form", () => {
+			// Empty `color` arg should produce a usage toast that lists every
+			// accepted form, including the new sentinel.
+			const r = parseBionicCommand("color");
+			expect(r.kind).toBe("usage");
+			if (r.kind === "usage") {
+				expect(r.message).toContain("none");
+			}
+		});
+	});
+
 	describe("S5-AC2 → S6-AC1 — single token produces a toggle-style action", () => {
 		it('"style bold" → toggle-style { fields: ["bold"] }', () => {
 			expect(parseBionicCommand("style bold")).toEqual({

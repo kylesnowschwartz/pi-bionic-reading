@@ -35,6 +35,7 @@ import { Markdown } from "@mariozechner/pi-tui";
 import { type Fixation } from "./bionic.js";
 import { type BionicReadingConfig, loadBionicConfig } from "./config.js";
 import {
+	applyClearColor,
 	applyClearStyle,
 	applyToggleStyle,
 	decideStyleApplication,
@@ -229,6 +230,15 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 					// S7-AC3: bail before cache+info toast on rejection so the
 					// rejected command is a no-op from the user's perspective.
 					if (!applyPrefixStyle(next, ctx)) return;
+					break;
+				}
+
+				case "clear-color": {
+					// `/bionic color none` — drop the color override, leave the
+					// rest of the style intact. When nothing else is set the
+					// renderer falls through to the host's `theme.bold`.
+					const current = state.config.prefixStyle ?? {};
+					if (!applyPrefixStyle(applyClearColor(current), ctx)) return;
 					break;
 				}
 

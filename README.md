@@ -41,6 +41,7 @@ Once installed, bionic mode is on by default. Use `/bionic` or press `Ctrl+X` (c
 | `/bionic 3`                      | Enable + balanced (default; bold ~50%)              |
 | `/bionic 5`                      | Enable + lightest (bold ~30%)                       |
 | `/bionic color <value>`          | Set prefix color: name, `#rrggbb`, `256:N`, `rgb:R,G,B` |
+| `/bionic color none`             | Drop the color override; fall back to the terminal default foreground |
 | `/bionic style bold`             | **Toggle** a decoration on/off (also: `dim`, `italic`, `underline`). Repeat to flip back. |
 | `/bionic style bold underline`   | Toggle multiple decorations in one call (each independently)        |
 | `/bionic style none`             | Force-clear all four decoration booleans                            |

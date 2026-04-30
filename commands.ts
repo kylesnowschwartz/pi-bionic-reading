@@ -22,6 +22,8 @@ export type BionicCommand =
 	| { kind: "toggle-style"; fields: StyleField[] }
 	/** Clear all four decoration booleans (`/bionic style none`). */
 	| { kind: "clear-style" }
+	/** Drop the `color` field from `prefixStyle` (`/bionic color none`). */
+	| { kind: "clear-color" }
 	| { kind: "usage"; message: string };
 
 const FIXATION_RE = /^[1-5]$/;
@@ -30,7 +32,7 @@ const STYLE_TOKENS = ["bold", "dim", "italic", "underline"] as const;
 const USAGE_TOPLEVEL =
 	"[bionic] usage: /bionic [on|off|toggle|1..5|color <value>|style <tokens>]";
 const USAGE_COLOR =
-	"[bionic] usage: /bionic color <name|#hex|256:N|rgb:R,G,B>";
+	"[bionic] usage: /bionic color <name|#hex|256:N|rgb:R,G,B|none>";
 const USAGE_STYLE =
 	"[bionic] usage: /bionic style <bold|dim|italic|underline|none> [...]";
 
@@ -67,13 +69,20 @@ export function parseBionicCommand(rawArgs: string): BionicCommand {
 		};
 	}
 
-	// `/bionic color <value>` (S5-AC1).
+	// `/bionic color <value>` (S5-AC1) or `/bionic color none` (clear).
 	if (subcommand === "color") {
 		if (rest === "") return { kind: "usage", message: USAGE_COLOR };
 		// Reject extra whitespace-separated words after the value so
-		// `color red extra` doesn't silently accept "red".
+		// `color red extra` doesn't silently accept "red". This also
+		// rejects `color none extra`, mirroring `style none <other>`.
 		if (/\s/.test(rest)) {
 			return { kind: "usage", message: USAGE_COLOR };
+		}
+		// `none` sentinel: clear the color field. Lowercased so `None` /
+		// `NONE` work; real color values (`#FFAA00`, `brightWhite`) are
+		// case-preserved by `set-color` below.
+		if (rest.toLowerCase() === "none") {
+			return { kind: "clear-color" };
 		}
 		return { kind: "set-color", value: rest };
 	}
