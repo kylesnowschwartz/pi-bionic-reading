@@ -118,21 +118,26 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 				return cached.lines;
 			}
 
-			// Reuse the transformed text if only width changed.
-			const transformed =
-				cached && cached.sourceText === source
-					? cached.transformedText
-					: bionicifyMarkdown(source, state.config);
-
 			// Swap text, blow away the original instance cache, render, swap back.
+			// All mutations live inside the try so the finally cleanup is the single
+			// source of restoration even if bionicifyMarkdown or any cache-reset assignment
+			// throws (defensive — bionicifyMarkdown is pure regex work today, but the
+			// guarantee is by construction, not by type).
 			const originalText = this.text;
-			this.text = transformed;
-			this.cachedText = undefined;
-			this.cachedLines = undefined;
-			this.cachedWidth = undefined;
-
+			let transformed: string;
 			let lines: string[];
 			try {
+				// Reuse the transformed text if only width changed.
+				transformed =
+					cached && cached.sourceText === source
+						? cached.transformedText
+						: bionicifyMarkdown(source, state.config);
+
+				this.text = transformed;
+				this.cachedText = undefined;
+				this.cachedLines = undefined;
+				this.cachedWidth = undefined;
+
 				// S4: when prefixWrap is non-null, swap `theme.bold` for the duration
 				// of this render so every `**…**` (including bionic prefixes) renders
 				// with the user's configured ANSI style. The override is restored
