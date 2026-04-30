@@ -33,7 +33,14 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import { Markdown } from "@mariozechner/pi-tui";
 import { type Fixation } from "./bionic.js";
-import { type BionicReadingConfig, loadBionicConfig } from "./config.js";
+import {
+	applyLiveThemeName,
+	applyThemePreset,
+	type BionicReadingConfig,
+	loadBionicConfig,
+	resolveActiveTheme,
+	type ThemeKind,
+} from "./config.js";
 import {
 	applyClearColor,
 	applyClearStyle,
@@ -57,7 +64,29 @@ interface CacheEntry {
 interface PatchState {
 	originalRender: (this: unknown, width: number) => string[];
 	cache: WeakMap<object, CacheEntry>;
+	/**
+	 * Active config = `baseConfig` with the matching theme preset layered
+	 * on top. Mutated by live `/bionic` commands (S5). Re-derived from
+	 * `baseConfig` whenever the resolved theme kind flips.
+	 */
 	config: BionicReadingConfig;
+	/**
+	 * File-loaded config before any preset layering. Source of truth for
+	 * `applyThemePreset` so a theme flip can re-derive `config` cleanly
+	 * without leaking the previous preset's settings.
+	 */
+	baseConfig: BionicReadingConfig;
+	/**
+	 * Last resolved theme kind. Compared against the live `ctx.ui.theme.name`
+	 * on every render; a mismatch triggers preset re-layering.
+	 */
+	resolvedThemeKind: ThemeKind;
+	/**
+	 * Captured at `session_start`. Lets `patchedRender` consult
+	 * `ctx.ui.theme.name` for live theme detection. Undefined before the
+	 * first session_start, in print/RPC mode, and after session_shutdown.
+	 */
+	ctx?: ExtensionContext;
 	/**
 	 * Resolved prefix-style wrapper, or null when the user hasn't configured
 	 * one (fall through to the host theme). Re-resolved lazily on each render
@@ -85,7 +114,17 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 			prev.originalRender;
 	}
 
-	const config = await loadBionicConfig(process.cwd());
+	// Load the file layer (defaults < user < project) without any preset
+	// layering yet — we keep the unlayered config as `baseConfig` so theme
+	// flips can re-derive cleanly.
+	const baseConfig = await loadBionicConfig(process.cwd(), {
+		skipThemePreset: true,
+	});
+	const initialTheme = await resolveActiveTheme(
+		process.cwd(),
+		baseConfig.themeKind,
+	);
+	const config = applyThemePreset(baseConfig, initialTheme.kind);
 
 	// S4-AC5: resolve prefixStyle at load and surface validation warnings.
 	const resolved = resolvePrefixStyle(config.prefixStyle);
@@ -95,14 +134,54 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 		originalRender: Markdown.prototype.render as PatchState["originalRender"],
 		cache: new WeakMap(),
 		config,
+		baseConfig,
+		resolvedThemeKind: initialTheme.kind,
 		prefixWrap: resolved.wrap,
 	};
 	g[INSTANCE_KEY] = state;
+
+	/**
+	 * Reconcile the active config with the live theme reported by
+	 * `ctx.ui.theme.name`. Cheap fast path when the kind hasn't moved —
+	 * just a property read + one strict-equality compare. The actual flip
+	 * logic (pin honoring, preset layering, prefix-style re-resolution)
+	 * lives in `applyLiveThemeName` so it can be unit-tested without
+	 * standing up the whole extension factory + render patch.
+	 *
+	 * Surfaces prefix-style warnings as `ctx.ui.notify` toasts when a
+	 * context is available, matching the existing `applyPrefixStyle` path
+	 * for slash-command warnings. Falls back to `console.warn` when the
+	 * reconcile fires before `session_start` (no ctx yet) so warnings are
+	 * never silently dropped.
+	 *
+	 * Live `/bionic color` / `/bionic style` mutations to `state.config`
+	 * are intentionally clobbered on flip — they're session-only by design
+	 * (S5-AC6) and the user's expectation is that the per-theme preset is
+	 * what each theme "looks like" until they save the tweak to bionic.jsonc.
+	 */
+	const reconcileThemeKind = (): void => {
+		const liveName = state.ctx?.ui?.theme?.name;
+		const next = applyLiveThemeName(state.baseConfig, liveName);
+		if (!next || next.kind === state.resolvedThemeKind) return;
+		state.resolvedThemeKind = next.kind;
+		state.config = next.config;
+		state.prefixWrap = next.prefixWrap;
+		state.cache = new WeakMap();
+		for (const w of next.prefixWarnings) {
+			if (state.ctx) state.ctx.ui.notify(w, "warning");
+			else console.warn(w);
+		}
+	};
 
 	const originalRender = state.originalRender;
 
 	(Markdown.prototype as unknown as { render: (width: number) => string[] }).render =
 		function patchedRender(this: PatchableMarkdown, width: number): string[] {
+			// Live theme reconciliation. No-op fast path when the kind hasn't
+			// moved; on flip it rebuilds `state.config` / `state.prefixWrap`
+			// and clears the cache so prior renders re-bionicify.
+			reconcileThemeKind();
+
 			if (!state.config.enabled) {
 				return originalRender.call(this, width);
 			}
@@ -294,7 +373,19 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 		});
 	}
 
+	// Capture the ExtensionContext so `reconcileThemeKind` can read the live
+	// `ctx.ui.theme.name` from inside the render patch (which doesn't get a
+	// ctx of its own — it runs inside pi-tui internals). Reconcile once at
+	// session_start too, in case the theme already moved between extension
+	// load and the first session: e.g. the-themer's own `session_start` may
+	// have called `setTheme()` before our render patch fires.
+	api.on("session_start", (_event, ctx) => {
+		state.ctx = ctx;
+		reconcileThemeKind();
+	});
+
 	api.on("session_shutdown", () => {
+		state.ctx = undefined;
 		(Markdown.prototype as unknown as { render: unknown }).render =
 			state.originalRender;
 		g[INSTANCE_KEY] = undefined;

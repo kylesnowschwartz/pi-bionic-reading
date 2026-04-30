@@ -105,6 +105,9 @@ Create `~/.pi/bionic.jsonc` (user-level) or `<project>/.pi/bionic.jsonc` (projec
   // Note: pi-tui only supports ctrl/shift/alt modifiers — Cmd is unreachable
   // from a TTY on macOS, so "cmd+..." bindings will not work.
   "hotkey": "ctrl+x"
+
+  // See "Per-theme presets" below for `themeKind` and `themes` (per-theme
+  // overrides that auto-apply based on pi's configured light/dark theme).
 }
 ```
 
@@ -167,6 +170,82 @@ you want to target precisely:**
 ```jsonc
 { "prefixStyle": { "ansi": "\u001b[38;5;226;1m" } }
 ```
+
+### Per-theme presets (prototype)
+
+Different terminal themes call for different bionic settings: a vivid red
+prefix that pops on a dark background washes out on a light one. The
+`themes` field lets you stash a separate preset for `light` and `dark`,
+and the extension auto-applies the matching one based on pi's configured
+theme.
+
+```jsonc
+{
+  // Base config — inherited by both themes unless overridden below.
+  "fixation": 3,
+  "prefixStyle": { "color": "red", "bold": true },
+
+  // Optional: pin the active kind. "auto" (default) reads pi's theme.
+  "themeKind": "auto",
+
+  // Per-theme presets, applied as a final layer on top of the base.
+  "themes": {
+    "light": {
+      "fixation": 2,
+      "prefixStyle": { "color": "blue", "bold": true }
+    },
+    "dark": {
+      "fixation": 4,
+      "prefixStyle": { "color": "brightYellow", "bold": true },
+      "invert": true  // any field of the base config can be overridden
+    }
+  }
+}
+```
+
+**How the active kind is resolved.** Two paths run in parallel:
+
+*Boot-time* (when the extension first loads), file-based:
+
+1. `themeKind: "light"` or `themeKind: "dark"` in `bionic.jsonc` — manual pin.
+2. `theme` field in `<cwd>/.pi/settings.json` — pi's project-level setting.
+3. `theme` field in `~/.pi/agent/settings.json` — pi's global setting.
+4. `COLORFGBG` environment variable (some terminals export `fg;bg`).
+5. `"dark"` — same hard fallback pi uses.
+
+*Live* (every render thereafter), API-based:
+
+- `ctx.ui.theme.name` from pi's `ExtensionContext`. When this changes —
+  whether via [the-themer](https://github.com/kylesnowschwartz/the-themer)'s
+  `/light` / `/dark` slash commands, an external `the-themer switch <name>`,
+  or any other extension calling `ctx.ui.setTheme()` — the matching preset
+  is re-layered on the next render. No restart required.
+
+If a manual `themeKind: "light"` or `themeKind: "dark"` pin is set, it wins
+over both paths — the live read becomes inert, so a `the-themer switch` or
+`/dark` from another extension will not flip the bionic preset. Use this
+to keep your bionic style decoupled from pi's terminal theme.
+
+Theme name classification mirrors pi's `isLightTheme()`: a name match
+against the literal `"light"` is the only thing that buckets to light;
+every other name (including custom themes) is treated as dark. Pin
+`themeKind` explicitly if you have a custom light theme.
+
+**Merge semantics:** the matching preset replaces matching keys at the top
+level. A preset that sets `prefixStyle` replaces the base `prefixStyle`
+object as a whole — it does not deep-merge with it. Keys the preset omits
+keep the base value.
+
+**Limitations of this prototype:**
+
+- Live commands (`/bionic color`, `/bionic style`) mutate the active config
+  but are session-only and don't write to per-theme blocks. A subsequent
+  theme flip rebuilds from `bionic.jsonc` + the new preset, so live tweaks
+  are intentionally clobbered on flip — same "session-only" semantics as
+  the existing slash commands.
+- The live read of `ctx.ui.theme.name` only fires when a `Markdown`
+  component re-renders. Pi normally requests a render on theme change
+  (`ctx.ui.requestRender()`), so this is invisible in practice.
 
 ### Slash commands vs. file persistence
 

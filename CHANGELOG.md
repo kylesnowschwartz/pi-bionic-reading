@@ -9,6 +9,28 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Per-theme presets (prototype).** New optional `themes` block in
+  `bionic.jsonc` lets you stash separate `light` / `dark` presets that
+  override the base config when pi's active theme matches. Boot-time
+  resolution walks `themeKind` (manual pin) → project
+  `<cwd>/.pi/settings.json` → global `~/.pi/agent/settings.json` →
+  `COLORFGBG` heuristic → `"dark"`. Theme name classification mirrors
+  pi's `isLightTheme()` (literal name match against `"light"`); pin
+  `themeKind` for custom light themes. Replacement is shallow at the top
+  level; `prefixStyle` swaps as a whole.
+- **Live theme reactivity.** The patched render now reads
+  `ctx.ui.theme.name` from pi's `ExtensionContext` and re-derives the
+  active preset whenever the kind flips. Composes transparently with
+  `the-themer` (or any other extension calling `ctx.ui.setTheme()`) —
+  no pi restart, no filesystem watcher, no extension-to-extension
+  coupling. Cost per render: one property dereference + one strict-equal
+  compare on the fast path. Manual `themeKind: "light"` / `"dark"` pins
+  are honored on the live path too — a pinned config will not flip when
+  pi's terminal theme changes mid-session, matching the documented
+  "manual pin wins over both paths" guarantee.
+- **Flip-time prefix-style warnings surface as toasts**, matching the
+  existing `/bionic color` slash-command behavior. Falls back to
+  `console.warn` only when reconcile fires before `session_start`.
 - **Unified rejection-toast format.** Every `/bionic` rejection toast now
   follows one template: `[bionic] /bionic <subcmd>: <reason>; valid options:
   <list>`. The previous mix — parser-level `usage: /bionic color <forms>`,
@@ -19,10 +41,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `/bionic color:` so the toast cites what the user typed, not the JSONC
   config key. The `style` toast spells out the multi-token affordance
   explicitly ("one or more, space-separated") instead of `[...]`. The
-  motivating case — `/bionic color off` — now reads `[bionic] /bionic`
-  `color: unrecognized color "off"; valid options:`
-  `<name|#hex|256:N|rgb:R,G,B|none>`, surfacing the `none` clear-sentinel
-  the user couldn't recall.
+  motivating case — `/bionic color off` — now reads
+  `[bionic] /bionic color: unrecognized color "off"; valid options:
+  <name|#hex|256:N|rgb:R,G,B|none>`, surfacing the `none` clear-sentinel
+  the user couldn't recall. Config-load warnings (logged from
+  `bionic.jsonc` parsing) keep their original text, since `none` is a
+  slash-command sentinel and would be misleading in a config error.
 
 ## [0.3.0] — 2025
 
