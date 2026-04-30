@@ -2,6 +2,8 @@
 
 A [pi](https://github.com/badlogic/pi-mono) extension that bolds the leading letters of each word in assistant prose, so your eye fixates on the prefix and your brain fills in the rest. The transform is display-only and never reaches the conversation context the model sees.
 
+![bionic mode demo: toggling the extension on a sample assistant turn](./bionic-demo.gif)
+
 ## What it does
 
 For each word in rendered assistant prose, the leading letters get wrapped in `**…**` (markdown bold):

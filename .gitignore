@@ -4,3 +4,6 @@ dist/
 *.log
 .vitest-cache/
 coverage/
+
+# Source recordings — only the rendered .gif gets committed
+*.mov
