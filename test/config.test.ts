@@ -13,6 +13,7 @@ describe("CONFIG_DEFAULTS", () => {
 			saccade: 1,
 			skipHeadings: false,
 			splitHyphenated: false,
+			invert: false,
 			hotkey: "ctrl+x",
 		});
 	});
@@ -26,6 +27,11 @@ describe("CONFIG_DEFAULTS", () => {
 	// S3-AC1 — splitHyphenated config field exists with default false.
 	it("defaults `splitHyphenated` to false", () => {
 		expect(CONFIG_DEFAULTS.splitHyphenated).toBe(false);
+	});
+
+	// Invert mode (prototype) — config field exists with default false.
+	it("defaults `invert` to false", () => {
+		expect(CONFIG_DEFAULTS.invert).toBe(false);
 	});
 });
 

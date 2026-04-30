@@ -61,6 +61,16 @@ export interface BionicOptions {
 	 * See SPEC § S3.
 	 */
 	splitHyphenated?: boolean;
+	/**
+	 * Invert the fixation cue: emit `**…**` around the SUFFIX of each
+	 * sub-word instead of the prefix, so the rest of the word is the bolded
+	 * portion and the leading letters render plain. Default false.
+	 *
+	 * Same partition (same `getBoldLength` value), different side. Useful for
+	 * users who find a trailing cue easier to track than a leading one.
+	 * Prototype — wired up to `/bionic invert`.
+	 */
+	invert?: boolean;
 }
 
 export const DEFAULT_OPTIONS: Required<BionicOptions> = {
@@ -68,6 +78,7 @@ export const DEFAULT_OPTIONS: Required<BionicOptions> = {
 	minWordLength: 2,
 	saccade: 1,
 	splitHyphenated: false,
+	invert: false,
 };
 
 /**
@@ -135,6 +146,7 @@ export function bionicifyText(text: string, opts: BionicOptions = {}): string {
 	const saccade = Math.max(1, opts.saccade ?? DEFAULT_OPTIONS.saccade);
 	const splitHyphenated =
 		opts.splitHyphenated ?? DEFAULT_OPTIONS.splitHyphenated;
+	const invert = opts.invert ?? DEFAULT_OPTIONS.invert;
 
 	let result = "";
 	let lastIdx = 0;
@@ -189,32 +201,48 @@ export function bionicifyText(text: string, opts: BionicOptions = {}): string {
 
 				let bold = getBoldLength(sub, fixation);
 
-				// Nudge the bold boundary off of `-` or `'` joiners.
+				// Nudge the bold boundary off of `-` or `'` joiners so the wrap
+				// the renderer is about to emit ends up CommonMark-flanking on
+				// the side that matters for the active mode:
 				//
-				// WORD_RE keeps tokens like `pipefail-sensitive` and `let's-go` as
-				// single words when splitHyphenated is off, so the split can land
-				// such that the prefix ends in a hyphen or apostrophe
-				// (e.g. `**pipefail-**sensitive`). CommonMark's right-flanking rule
-				// then prevents the closing `**` from closing: preceded by
-				// punctuation, followed by a letter, not right-flanking, renders as
-				// literal asterisks.
+				//   normal mode — wrap is `**prefix**suffix`. The CLOSING `**`
+				//     sits at sub[bold]. To be right-flanking it must be
+				//     preceded by a letter (not by `-`/`'`). Decrement `bold`
+				//     while sub[bold-1] is a joiner.
 				//
-				// Shifting `bold` inward by one lands the closing `**` between a
-				// letter and the joiner (`**pipefail**-sensitive`), which IS
-				// right-flanking and renders correctly. Word tokens always start
-				// with a letter/digit per WORD_RE, so this loop can't undershoot to 0.
-				while (
-					bold > 0 &&
-					(sub[bold - 1] === "-" || sub[bold - 1] === "'")
-				) {
-					bold--;
+				//   invert mode — wrap is `prefix**suffix**`. The OPENING `**`
+				//     sits at sub[bold]. To be left-flanking it must be
+				//     followed by a letter (not by `-`/`'`). Increment `bold`
+				//     while sub[bold] is a joiner.
+				//
+				// WORD_RE guarantees sub-words start AND end with a letter/digit,
+				// so each loop terminates without overshooting the sub-word.
+				if (invert) {
+					while (
+						bold < sub.length - 1 &&
+						(sub[bold] === "-" || sub[bold] === "'")
+					) {
+						bold++;
+					}
+				} else {
+					while (
+						bold > 0 &&
+						(sub[bold - 1] === "-" || sub[bold - 1] === "'")
+					) {
+						bold--;
+					}
 				}
 
 				if (bold <= 0) {
 					result += sub;
 				} else if (bold >= sub.length) {
 					// Whole sub-word is bolded (rare — fixation 1, very short sub-word).
+					// In invert mode, "whole sub-word styled" and "whole sub-word
+					// plain" are visually identical when bold == sub.length, so
+					// we keep the prefix-wrap form for byte-stable output.
 					result += `**${sub}**`;
+				} else if (invert) {
+					result += `${sub.slice(0, bold)}**${sub.slice(bold)}**`;
 				} else {
 					result += `**${sub.slice(0, bold)}**${sub.slice(bold)}`;
 				}

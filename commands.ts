@@ -24,13 +24,15 @@ export type BionicCommand =
 	| { kind: "clear-style" }
 	/** Drop the `color` field from `prefixStyle` (`/bionic color none`). */
 	| { kind: "clear-color" }
+	/** Toggle the `invert` config field (`/bionic invert`). */
+	| { kind: "toggle-invert" }
 	| { kind: "usage"; message: string };
 
 const FIXATION_RE = /^[1-5]$/;
 const STYLE_TOKENS = ["bold", "dim", "italic", "underline"] as const;
 
 const USAGE_TOPLEVEL =
-	"[bionic] usage: /bionic [on|off|toggle|1..5|color <value>|style <tokens>]";
+	"[bionic] usage: /bionic [on|off|toggle|1..5|invert|color <value>|style <tokens>]";
 const USAGE_COLOR =
 	"[bionic] usage: /bionic color <name|#hex|256:N|rgb:R,G,B|none>";
 const USAGE_STYLE =
@@ -67,6 +69,13 @@ export function parseBionicCommand(rawArgs: string): BionicCommand {
 			kind: "set-fixation",
 			value: parseInt(subcommand, 10) as Fixation,
 		};
+	}
+
+	// `/bionic invert` — toggle suffix-bolding mode. Prototype.
+	if (subcommand === "invert") {
+		return rest === ""
+			? { kind: "toggle-invert" }
+			: { kind: "usage", message: USAGE_TOPLEVEL };
 	}
 
 	// `/bionic color <value>` (S5-AC1) or `/bionic color none` (clear).

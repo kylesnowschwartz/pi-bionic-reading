@@ -45,6 +45,7 @@ Once installed, bionic mode is on by default. Use `/bionic` or press `Ctrl+X` (c
 | `/bionic style bold`             | **Toggle** a decoration on/off (also: `dim`, `italic`, `underline`). Repeat to flip back. |
 | `/bionic style bold underline`   | Toggle multiple decorations in one call (each independently)        |
 | `/bionic style none`             | Force-clear all four decoration booleans                            |
+| `/bionic invert`                 | Toggle suffix-bolding: bold the *end* of each word instead of the start (prototype) |
 | `Ctrl+X` (hotkey)                | Toggle on/off (configurable, see below)                             |
 
 Color and style changes apply for the rest of the session only — they do **not** write to `bionic.jsonc`. See the *Slash commands vs. file persistence* section below.

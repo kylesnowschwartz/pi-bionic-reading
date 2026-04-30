@@ -280,4 +280,42 @@ describe("parseBionicCommand", () => {
 			expect(parseBionicCommand("0").kind).toBe("usage");
 		});
 	});
+
+	describe("`/bionic invert` — toggle suffix-bolding (prototype)", () => {
+		// Mirrors `/bionic` (the bare toggle): no args, just flips state.
+		// The dispatcher handles the actual flip; the parser only emits the
+		// action shape.
+		it('"invert" → toggle-invert', () => {
+			expect(parseBionicCommand("invert")).toEqual({
+				kind: "toggle-invert",
+			});
+		});
+
+		it("case-insensitive on the subcommand (Invert / INVERT)", () => {
+			expect(parseBionicCommand("Invert")).toEqual({
+				kind: "toggle-invert",
+			});
+			expect(parseBionicCommand("INVERT")).toEqual({
+				kind: "toggle-invert",
+			});
+		});
+
+		it('"invert <anything>" → usage (no args accepted)', () => {
+			// Toggle has no payload; reject extras to avoid silently accepting
+			// `/bionic invert on` etc. (which the user might assume works).
+			expect(parseBionicCommand("invert on").kind).toBe("usage");
+			expect(parseBionicCommand("invert true").kind).toBe("usage");
+			expect(parseBionicCommand("invert garbage").kind).toBe("usage");
+		});
+
+		it("top-level usage message advertises `invert`", () => {
+			// Unknown subcommand triggers USAGE_TOPLEVEL; verify the new
+			// keyword is in there so users can discover it.
+			const r = parseBionicCommand("unknown");
+			expect(r.kind).toBe("usage");
+			if (r.kind === "usage") {
+				expect(r.message).toContain("invert");
+			}
+		});
+	});
 });

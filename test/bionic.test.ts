@@ -509,3 +509,142 @@ describe("S3 — splitHyphenated opt-in", () => {
 		});
 	});
 });
+
+// =============================================================================
+// Invert mode (prototype) — `/bionic invert`
+// =============================================================================
+// Same partition as normal mode (same `getBoldLength`), but the `**…**`
+// markers wrap the SUFFIX of each sub-word instead of the prefix. Wired up
+// through `BionicOptions.invert`. Each sub-word inverts independently so
+// camelCase / acronym splits still produce one cue per sub-word.
+describe("invert mode", () => {
+	describe("swaps which side gets the `**…**` wrap", () => {
+		it("single word: `bionic` (len 6, fix 3, bold 3) → `bio**nic**`", () => {
+			expect(bionicifyText("bionic", { fixation: 3, invert: true })).toBe(
+				"bio**nic**",
+			);
+		});
+
+		it("`reading` (len 7, fix 3, bold 4) → `read**ing**`", () => {
+			expect(bionicifyText("reading", { fixation: 3, invert: true })).toBe(
+				"read**ing**",
+			);
+		});
+
+		it("prose: each word inverts independently, whitespace preserved", () => {
+			expect(
+				bionicifyText("the quick brown fox", { fixation: 3, invert: true }),
+			).toBe("t**he** qui**ck** bro**wn** f**ox**");
+		});
+	});
+
+	describe("identifier-aware tokenization still applies per sub-word", () => {
+		it("camelCase: `useEffect` → `u**se**Eff**ect**`", () => {
+			// splitIdentifier carves `use` + `Effect`; each sub-word inverts
+			// independently so the cue lands at the end of each segment.
+			expect(
+				bionicifyText("useEffect", { fixation: 3, invert: true }),
+			).toBe("u**se**Eff**ect**");
+		});
+
+		it("PascalCase + acronym: `XMLParser` → `X**ML**Par**ser**`", () => {
+			expect(
+				bionicifyText("XMLParser", { fixation: 3, invert: true }),
+			).toBe("X**ML**Par**ser**");
+		});
+
+		it("snake_case: each segment inverts independently", () => {
+			// WORD_RE splits on `_` so segments are tokenized separately;
+			// underscores stay literal and never appear inside `**…**`.
+			expect(
+				bionicifyText("snake_case", { fixation: 3, invert: true }),
+			).toBe("sna**ke**_ca**se**");
+		});
+
+		it("splitHyphenated=true: each hyphen segment inverts independently", () => {
+			expect(
+				bionicifyText("react-router-dom", {
+					fixation: 3,
+					invert: true,
+					splitHyphenated: true,
+				}),
+			).toBe("rea**ct**-rou**ter**-d**om**");
+		});
+	});
+
+	describe("hyphen / apostrophe nudge — inverted direction", () => {
+		// Normal mode nudges `bold` INWARD so the closing `**` is
+		// right-flanking. Invert mode nudges `bold` FORWARD so the OPENING
+		// `**` is left-flanking (must be followed by a letter, not by a
+		// joiner). WORD_RE guarantees the loop terminates.
+
+		it("`a-b` (bold 1 lands on `-`) advances to bold 2: `a-**b**`", () => {
+			// fix 3 boundary table places len=3 → bold=1; sub[1]='-' triggers
+			// the forward nudge to bold=2 (sub[2]='b').
+			expect(bionicifyText("a-b", { fixation: 3, invert: true })).toBe(
+				"a-**b**",
+			);
+		});
+
+		it("contraction `let's`: `let'**s**` (no joiner at sub[bold])", () => {
+			expect(bionicifyText("let's", { fixation: 3, invert: true })).toBe(
+				"let'**s**",
+			);
+		});
+
+		it("hyphenated compound `well-known`: `well-**known**`", () => {
+			expect(
+				bionicifyText("well-known", { fixation: 3, invert: true }),
+			).toBe("well-**known**");
+		});
+	});
+
+	describe("edge cases", () => {
+		it("sub-word below minWordLength is unwrapped (same as normal mode)", () => {
+			// Single-letter sub-words pass through verbatim regardless of mode.
+			expect(bionicifyText("a", { fixation: 3, invert: true })).toBe("a");
+		});
+
+		it("pure-numeric tokens pass through unchanged", () => {
+			expect(
+				bionicifyText("123 v2 a1", { fixation: 3, invert: true }),
+			).toBe("123 v**2** a**1**");
+		});
+
+		it("saccade still applies (every Nth sub-word styled)", () => {
+			// saccade=2 means every other sub-word gets a cue; the cue still
+			// lands on the suffix when invert is on.
+			expect(
+				bionicifyText("the quick brown fox", {
+					fixation: 3,
+					invert: true,
+					saccade: 2,
+				}),
+			).toBe("t**he** quick bro**wn** fox");
+		});
+
+		it("invert: false matches default behavior (no regression)", () => {
+			// Explicit invert:false should equal omitting the option.
+			const src = "the quickBrownFox jumpsOver theLazyDog";
+			expect(
+				bionicifyText(src, { fixation: 3, invert: false }),
+			).toBe(bionicifyText(src, { fixation: 3 }));
+		});
+
+		it("character-preservation: stripping `**` from invert output yields the source", () => {
+			// Mirrors S1-AC4 round-trip property — invert must not lose or
+			// duplicate any source character.
+			const inputs = [
+				"useEffect",
+				"XMLParser",
+				"the quick brown fox",
+				"snake_case identifier",
+				"well-known compound",
+			];
+			for (const src of inputs) {
+				const out = bionicifyText(src, { fixation: 3, invert: true });
+				expect(out.replaceAll("**", "")).toBe(src);
+			}
+		});
+	});
+});

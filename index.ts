@@ -171,9 +171,13 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 		const base = cfg.enabled
 			? `[bionic] enabled (fixation ${cfg.fixation})`
 			: `[bionic] disabled`;
+		// Surface invert mode in the toggle toast so users have feedback that
+		// `/bionic invert` actually flipped state. Slotted between base and
+		// hotkey so the hotkey hint stays the rightmost dot-separated suffix.
+		const withInvert = cfg.invert ? `${base} · inverted` : base;
 		// Suffix with the active hotkey so users see what binding to press next.
 		// Suppressed when no hotkey is configured to avoid `· ` dangling suffix.
-		return cfg.hotkey ? `${base} · ${cfg.hotkey}` : base;
+		return cfg.hotkey ? `${withInvert} · ${cfg.hotkey}` : withInvert;
 	};
 
 	// Toggle bionic on/off and notify. Shared between the /bionic command and
@@ -251,6 +255,13 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 				case "clear-style": {
 					const current = state.config.prefixStyle ?? {};
 					if (!applyPrefixStyle(applyClearStyle(current), ctx)) return;
+					break;
+				}
+
+				case "toggle-invert": {
+					// Prototype: flip suffix-bolding mode. No persistence to
+					// bionic.jsonc — mirrors S5-AC6 (slash commands are session-only).
+					state.config.invert = !state.config.invert;
 					break;
 				}
 

@@ -46,6 +46,11 @@ export interface BionicReadingConfig {
 	 */
 	splitHyphenated: boolean;
 	/**
+	 * Invert the fixation cue: bold the SUFFIX of each sub-word instead of
+	 * the prefix. Default false. Toggleable live via `/bionic invert`.
+	 */
+	invert: boolean;
+	/**
 	 * ANSI styling for the bionic prefix. When unset, the host's `theme.bold`
 	 * is used as today. See SPEC § S4 / `prefix-style.ts` for accepted forms.
 	 */
