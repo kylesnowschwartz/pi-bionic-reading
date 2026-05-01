@@ -58,60 +58,84 @@ Create `~/.pi/bionic.jsonc` (user-level) or `<project>/.pi/bionic.jsonc` (projec
 
 ```jsonc
 {
-  // Master switch
+  // Master switch.
   "enabled": true,
 
-  // Fixation strength: 1 (heaviest) … 5 (lightest)
+  // Fixation strength: 1 (heaviest, ~80% bold) … 5 (lightest, ~30%).
   "fixation": 3,
 
-  // Skip words shorter than this (1 = bold every letter; 2 = skip 1-letter words)
+  // Skip words shorter than this. 1 = bold every letter; 2 = skip 1-letter words.
   "minWordLength": 2,
 
-  // Bold every Nth word (1 = every word, 2 = alternate, etc.)
+  // Bold every Nth word. 1 = every word, 2 = alternate, etc.
   "saccade": 1,
 
-  // Leave heading lines verbatim instead of bolding their words
+  // Leave heading lines verbatim instead of bolding their words.
   "skipHeadings": false,
 
   // Split hyphenated tokens (`react-router-dom` → `**rea**ct-**rou**ter-**d**om`)
-  // into per-segment sub-words. Default false to preserve English compounds
+  // into per-segment sub-words. Default false preserves English compounds
   // like `well-known`. Turn on if you read a lot of identifier-heavy prose.
   "splitHyphenated": false,
 
-  // ANSI styling for the bolded prefix. When unset, the host's default bold
-  // style is used (typically just SGR-1, which on bright-colored fonts can
-  // be invisible). Set this to add a color or alternate decoration.
+  // Bold the SUFFIX of each word instead of the prefix (toggleable live
+  // via `/bionic invert`).
+  "invert": false,
+
+  // ANSI styling for the bolded prefix. Omit to use the host's default bold
+  // style (typically just SGR-1, which on bright-colored fonts can be
+  // invisible). All subfields are optional and combine.
   //
-  //   color    : named ("red", "brightWhite", "gray"…), "#rrggbb",
-  //              "256:N" (0–255), or "rgb:R,G,B" (each 0–255).
-  //   bold     : SGR 1 (additional, on top of color)
+  //   color    : "red" / "brightWhite" / "gray" (see table below),
+  //              "#ffaa00", "256:208", or "rgb:255,170,0".
+  //   bold     : SGR 1 (combines with color)
   //   italic   : SGR 3
   //   underline: SGR 4
-  //   dim      : SGR 2
+  //   dim      : SGR 2 (use alone for an inverted-contrast cue —
+  //              dimmed prefix, normal-weight rest)
   //   ansi     : raw escape-sequence escape hatch — wins over the above.
-  //              Close is always \u001b[0m. Use this only if you know your
-  //              terminal will absorb the universal reset cleanly; structured
-  //              fields (above) emit targeted SGR closes that preserve the
-  //              host's background color and other line-level attributes.
+  //              e.g. "\u001b[38;5;226;1m". Close is always \u001b[0m, so
+  //              use only if your terminal will absorb the universal reset
+  //              cleanly; the structured fields emit targeted SGR closes
+  //              that preserve background color and other line-level attrs.
   //
   // Side-effect: while bionic is on, this style also applies to user-authored
   // **bold** literals in assistant messages (the override targets theme.bold).
-  // "prefixStyle": { "color": "red", "bold": true },
-
+  "prefixStyle": { "color": "red", "bold": true },
 
   // Hotkey to toggle bionic mode on/off. Same string format pi uses for
   // keybindings (e.g. "ctrl+x", "ctrl+q", "f6"). Set to null or "" to
   // disable. Conflicts with built-in pi shortcuts are reported and skipped.
   // Note: pi-tui only supports ctrl/shift/alt modifiers — Cmd is unreachable
   // from a TTY on macOS, so "cmd+..." bindings will not work.
-  "hotkey": "ctrl+x"
+  "hotkey": "ctrl+x",
 
-  // See "Per-theme presets" below for `themeKind` and `themes` (per-theme
-  // overrides that auto-apply based on pi's configured light/dark theme).
+  // (Prototype) Pin the active theme kind. "auto" reads pi's configured
+  // theme via ctx.ui.theme.name and re-layers the matching `themes` preset
+  // below on every render. Set to "light" or "dark" to override and
+  // decouple your bionic style from pi's terminal theme.
+  "themeKind": "auto",
+
+  // (Prototype) Per-theme presets, applied as a final layer on top of the
+  // base above when the active kind matches. Any base field can be
+  // overridden; `prefixStyle` is replaced as a whole, not deep-merged.
+  // Live `/bionic` commands do not write into these blocks — a theme flip
+  // rebuilds from this file and clobbers any session-only tweaks.
+  "themes": {
+    "light": {
+      "fixation": 2,
+      "prefixStyle": { "color": "blue", "bold": true }
+    },
+    "dark": {
+      "fixation": 4,
+      "prefixStyle": { "color": "brightYellow", "underline": true },
+      "invert": true
+    }
+  }
 }
 ```
 
-All fields are optional. Defaults shown above.
+All fields are optional — delete anything you don't want to override. The values shown match the defaults except for `prefixStyle`, `themeKind`, and `themes`, which are unset by default.
 
 ### Named colors
 
@@ -137,68 +161,6 @@ to the same SGR code as `brightBlack`. The rejection toast for an
 unrecognized name lists this set inline so you can pick a substitute
 without leaving the editor.
 
-### Per-theme presets (prototype)
-
-Different terminal themes call for different bionic settings: a vivid red
-prefix that pops on a dark background washes out on a light one. The
-`themes` field lets you stash a separate preset for `light` and `dark`,
-and the extension auto-applies the matching one based on pi's configured
-theme.
-
-```jsonc
-{
-  // Base config — inherited by both themes unless overridden below.
-  "fixation": 3,
-  "prefixStyle": { "color": "red", "bold": true },
-
-  // Optional: pin the active kind. "auto" (default) reads pi's theme.
-  "themeKind": "auto",
-
-  // Per-theme presets, applied as a final layer on top of the base.
-  "themes": {
-    "light": {
-      "fixation": 2,
-      "prefixStyle": { "color": "blue", "bold": true }
-    },
-    "dark": {
-      "fixation": 4,
-      "prefixStyle": { "color": "brightYellow", "bold": true },
-      "invert": true  // any field of the base config can be overridden
-    }
-  }
-}
-```
-
-**Active kind resolution.** The kind is read live from `ctx.ui.theme.name`
-on every render, so flipping pi's theme — via [the-themer](https://github.com/kylesnowschwartz/the-themer)'s
-`/light` / `/dark`, `ctx.ui.setTheme()`, or any other extension — re-layers
-the matching preset on the next render. No restart required.
-
-At boot, before pi's theme is available, the kind comes from (in order):
-`themeKind` in `bionic.jsonc`, the `theme` field in
-`<cwd>/.pi/settings.json` or `~/.pi/agent/settings.json`, the `COLORFGBG`
-env var, then `"dark"` as a hard fallback (matching pi).
-
-A manual `themeKind: "light"` or `"dark"` pin overrides everything — even
-later live flips — so a `the-themer switch` or `/dark` from another
-extension will not move the bionic preset. Use it to keep your bionic
-style decoupled from pi's terminal theme. Theme-name classification
-mirrors pi's `isLightTheme()`: only the literal name `"light"` buckets
-to light; anything else (custom themes included) is treated as dark, so
-pin `themeKind` explicitly if you have a custom light theme.
-
-**Merge semantics:** the matching preset shallow-merges over the base —
-keys the preset omits keep the base value, but a `prefixStyle` set in the
-preset *replaces* the base `prefixStyle` object as a whole rather than
-deep-merging.
-
-**Limitations.** Live commands (`/bionic color`, `/bionic style`) mutate
-the active session but don't write to per-theme blocks; a theme flip
-rebuilds from `bionic.jsonc` + the new preset, clobbering live tweaks
-(same session-only semantics as the rest of the slash commands). The live
-theme read fires only when a `Markdown` component re-renders, which pi
-normally triggers on theme change.
-
 ### Slash commands vs. file persistence
 
 `/bionic color`, `/bionic style`, and the toggle commands all mutate the
@@ -214,43 +176,9 @@ into the previous session does not carry over.
 
 ### Hotkey not firing?
 
-The `/bionic` toast (e.g. `[bionic] enabled (fixation 3)`) is your confirmation the binding fired. If it doesn't appear when you press the configured key:
+The `/bionic` toast (e.g. `[bionic] enabled (fixation 3)`) is your confirmation the binding fired.
 
-1. **Hard conflict with a pi built-in.** Pi's keybinding registry marks some shortcuts as non-overridable. The runner skips your binding entirely and logs a warning at extension load. Check pi's startup diagnostics after a config change.
-2. **Key swallowed upstream.** Tmux leaders, terminal-emulator menu shortcuts, and macOS system shortcuts all consume keystrokes before pi's stdin sees them. `Ctrl+B` under tmux's default leader, for example, never reaches pi.
-3. **Cmd-based shortcut.** pi-tui only recognises `ctrl`/`shift`/`alt` modifiers, and TTYs on macOS can't see Cmd at all. Anything starting with `cmd+` won't work.
-
-**Note on the default `ctrl+x`.** Recent pi versions bind `ctrl+x` to `app.models.clearAll` inside the model-selector overlay (opened with `Ctrl+L`). This is a *soft* conflict (`restrictOverride: false`): the runner logs `Extension shortcut conflict: 'ctrl+x' is built-in shortcut for app.models.clearAll …` at startup, then hands the binding to this extension. In practice:
-
-- Toggling bionic with `Ctrl+X` works as expected in the editor.
-- Inside the model selector, `Ctrl+X` toggles bionic instead of clearing models.
-- To suppress the diagnostic and keep the model-selector default, set `"hotkey": "ctrl+\\"` (or any other free key) in `bionic.jsonc`.
-
-## How it works
-
-1. **On load.** The extension wraps `Markdown.prototype.render` from `@mariozechner/pi-tui`. The original method is captured and stashed on `globalThis` so reload is idempotent.
-2. **On each render call.** If the master switch is on, the source markdown runs through `bionicifyMarkdown()`, a regex-driven walker that identifies forbidden character ranges (fenced code, inline code, link URLs, autolinks, raw HTML, ref-link definitions) and applies `bionicifyText()` only to the safe spans in between.
-3. **Per-instance caching.** A `WeakMap` keyed on source text plus width avoids re-parsing on every redraw. The Markdown component's own cache is invalidated on every call, so toggling on or off never leaks stale output.
-4. **On `session_shutdown`.** The original `render` is restored.
-
-## Files
-
-| File             | Purpose                                              |
-| ---------------- | ---------------------------------------------------- |
-| `index.ts`       | Entry point. Monkey-patch, command, hotkey, lifecycle. |
-| `bionic.ts`      | Word-level algorithm and fixation tables.            |
-| `transform.ts`   | Markdown-aware walker and forbidden-range detection. |
-| `config.ts`      | JSONC config loader (user + project merge).          |
-| `test/*.test.ts` | Vitest unit tests.                                   |
-
-## Development
-
-```bash
-npm install
-npm test            # vitest run
-npm run test:watch  # vitest watch mode
-npm run typecheck   # tsc --noEmit
-```
+**Note on the default `ctrl+x`.** Recent pi versions bind `ctrl+x` to `app.models.clearAll` inside the model-selector overlay (opened with `Ctrl+L`). This is a *soft* conflict (`restrictOverride: false`): the runner logs `Extension shortcut conflict: 'ctrl+x' is built-in shortcut for app.models.clearAll …` at startup, then hands the binding to this extension.
 
 ## Algorithm credits
 
