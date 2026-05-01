@@ -552,3 +552,91 @@ describe("loadBionicConfig — theme integration", () => {
 		expect(base.themes).toEqual({ dark: { fixation: 5 } }); // preset still reachable
 	});
 });
+
+describe("loadBionicConfig — PI_CODING_AGENT_DIR", () => {
+	// When PI_CODING_AGENT_DIR is set, the user-level bionic.jsonc lives
+	// next to settings.json inside that override dir, mirroring how the rest of
+	// pi treats the variable. When it is unset, the legacy ~/.pi/bionic.jsonc
+	// path is preserved (covered implicitly by the suite above — there's no way
+	// to isolate the dev's real homedir without monkey-patching node:os).
+	let cwd: string;
+	let agentDir: string;
+	let originalAgentDir: string | undefined;
+	let originalColorFgBg: string | undefined;
+
+	beforeEach(async () => {
+		cwd = await mkdtemp(join(tmpdir(), "pi-bionic-agentdir-cwd-"));
+		agentDir = await mkdtemp(join(tmpdir(), "pi-bionic-agentdir-agent-"));
+		originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		originalColorFgBg = process.env.COLORFGBG;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		// Isolate the COLORFGBG fallback in resolveActiveTheme so the dev's
+		// terminal can't flip a theme preset mid-test.
+		delete process.env.COLORFGBG;
+	});
+
+	afterEach(async () => {
+		await rm(cwd, { recursive: true, force: true });
+		await rm(agentDir, { recursive: true, force: true });
+		if (originalAgentDir === undefined)
+			delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		if (originalColorFgBg === undefined) delete process.env.COLORFGBG;
+		else process.env.COLORFGBG = originalColorFgBg;
+	});
+
+	it("loads user config from <PI_CODING_AGENT_DIR>/bionic.jsonc", async () => {
+		// Sentinel value the dev's real ~/.pi/bionic.jsonc almost certainly does
+		// not set — if the agent-dir path is honoured we'll see 99 come back.
+		await writeFile(
+			join(agentDir, "bionic.jsonc"),
+			'{ "minWordLength": 99 }\n',
+			"utf-8",
+		);
+		const config = await loadBionicConfig(cwd, { skipThemePreset: true });
+		expect(config.minWordLength).toBe(99);
+	});
+
+	it("does not bleed ~/.pi/bionic.jsonc when PI_CODING_AGENT_DIR is set", async () => {
+		// Empty agentDir + no project config: defaults must come through, even
+		// if the dev's actual ~/.pi/bionic.jsonc sets these fields. This is the
+		// load-time analogue of the resolveActiveTheme isolation pattern above.
+		const config = await loadBionicConfig(cwd, { skipThemePreset: true });
+		expect(config.minWordLength).toBe(CONFIG_DEFAULTS.minWordLength);
+		expect(config.fixation).toBe(CONFIG_DEFAULTS.fixation);
+		expect(config.hotkey).toBe(CONFIG_DEFAULTS.hotkey);
+		// CONFIG_DEFAULTS does not set `prefixStyle` — a leak from the real
+		// homedir would surface here. Strongest available assertion that the
+		// override path is the *only* user source consulted.
+		expect(config.prefixStyle).toBeUndefined();
+		expect(config.themes).toBeUndefined();
+	});
+
+	it("project config still beats user config from PI_CODING_AGENT_DIR", async () => {
+		await writeFile(
+			join(agentDir, "bionic.jsonc"),
+			'{ "minWordLength": 99, "fixation": 5 }\n',
+			"utf-8",
+		);
+		await mkdir(join(cwd, ".pi"), { recursive: true });
+		await writeFile(
+			join(cwd, ".pi", "bionic.jsonc"),
+			'{ "minWordLength": 7 }\n',
+			"utf-8",
+		);
+		const config = await loadBionicConfig(cwd, { skipThemePreset: true });
+		expect(config.minWordLength).toBe(7); // project override
+		expect(config.fixation).toBe(5); // agentDir wins where project is silent
+	});
+
+	it("tolerates ~ in PI_CODING_AGENT_DIR (matches getPiAgentDir semantics)", async () => {
+		// `~` and `~/` expansion already happens inside getPiAgentDir for the
+		// settings.json probe; the bionic.jsonc loader must use the same path.
+		// We can't safely write to the dev's real homedir, so this test only
+		// asserts that a `~`-prefixed override does not throw and returns
+		// defaults (no bionic.jsonc was created at the resolved path).
+		process.env.PI_CODING_AGENT_DIR = "~/this-path-does-not-exist-pi-bionic";
+		const config = await loadBionicConfig(cwd, { skipThemePreset: true });
+		expect(config.minWordLength).toBe(CONFIG_DEFAULTS.minWordLength);
+	});
+});

@@ -5,6 +5,26 @@ All notable changes to `pi-bionic-reading` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] — 2026
+
+### Fixed
+
+- **`PI_CODING_AGENT_DIR` is now respected when locating the user-level
+  `bionic.jsonc`.** Previously the loader hardcoded `~/.pi/bionic.jsonc`
+  even when pi itself had been pointed at a different agent directory.
+  When the variable is set, the user config now lives at
+  `$PI_CODING_AGENT_DIR/bionic.jsonc` (alongside `settings.json`); when
+  unset, the legacy `~/.pi/bionic.jsonc` path is preserved so existing
+  setups don't move.
+
+- **LaTeX math regions (`$…$` inline and `$$…$$` block) are no longer
+  mangled by the bionic walker.** They join code blocks, link URLs,
+  autolinks, raw HTML, and link reference definitions on the no-transform
+  list, so math content with markdown-shaped tokens (`\frac{a}{b}`,
+  `\alpha`, `a**b**c` inside `$$…$$`) passes through verbatim. Currency-
+  shaped patterns like "buy at $5, save $10" are rejected via Pandoc's
+  anti-currency rules (no whitespace adjacent to the dollars, no digit
+  after the closing `$`, no math start after a backslash escape).
 ## [0.4.1] — 2026
 
 ### Changed

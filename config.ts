@@ -1,8 +1,12 @@
 /**
  * pi-bionic-reading configuration.
  *
- * Loads from ~/.pi/bionic.jsonc (user-level) and <cwd>/.pi/bionic.jsonc
- * (project-level). Project values override user values.
+ * Loads from `<userConfigDir>/bionic.jsonc` (user-level) and
+ * `<cwd>/.pi/bionic.jsonc` (project-level). Project values override user
+ * values. `<userConfigDir>` is normally `~/.pi/`, but when
+ * `PI_CODING_AGENT_DIR` is set it points at that directory instead so the
+ * user config lives next to `settings.json` — mirroring how the rest of pi
+ * treats the variable.
  *
  * JSONC is parsed with the `jsonc-parser` library (MIT, no deps; the parser
  * Microsoft uses in VS Code) so // and block comments AND `,]` / `,}` trailing
@@ -333,7 +337,15 @@ export async function loadBionicConfig(
 	cwd: string,
 	options: LoadBionicConfigOptions = {},
 ): Promise<BionicReadingConfig> {
-	const user = await tryLoad(join(homedir(), ".pi", "bionic.jsonc"));
+	// User config: `PI_CODING_AGENT_DIR/bionic.jsonc` when the env var is set
+	// (so all pi user state lives in one place), otherwise the legacy
+	// `~/.pi/bionic.jsonc`. Keying on the raw env var — not on the resolved
+	// path — keeps the override-vs-default decision explicit even when a user
+	// sets `PI_CODING_AGENT_DIR=$HOME/.pi/agent` redundantly.
+	const userConfigPath = process.env.PI_CODING_AGENT_DIR
+		? join(getPiAgentDir(), "bionic.jsonc")
+		: join(homedir(), ".pi", "bionic.jsonc");
+	const user = await tryLoad(userConfigPath);
 	const project = await tryLoad(join(cwd, ".pi", "bionic.jsonc"));
 	const merged: BionicReadingConfig = {
 		...CONFIG_DEFAULTS,

@@ -102,6 +102,27 @@ export function findPreservedRanges(src: string): Range[] {
 	const strikeRe = /~~(?=\S)[^~\n]+?(?<=\S)~~/g;
 	pushAll(strikeRe);
 
+	// 10. Math (LaTeX). Two flavours, both Pandoc-shaped because CommonMark
+	//     does not standardise math:
+	//
+	//       a) Block math: `$$ … $$`. Multi-line allowed; lazy match so two
+	//          adjacent block spans don't collapse into one.
+	//       b) Inline math: `$ … $` with two anti-currency guards —
+	//             - opening `$` not preceded by a backslash (escape) or
+	//               another `$` (so `$$` is left to the block matcher),
+	//             - opening `$` not followed by whitespace,
+	//             - closing `$` not preceded by whitespace,
+	//             - closing `$` not followed by a digit, so phrases like
+	//               "buy at $5, save $10" stay prose.
+	//
+	//     Block must be detected before inline matters in practice (overlap is
+	//     resolved by mergeRanges anyway), but the inline regex's `(?<![\\$])`
+	//     lookbehind already prevents a `$$` pair from being grabbed as inline.
+	const mathBlockRe = /\$\$[\s\S]+?\$\$/g;
+	const mathInlineRe = /(?<![\\$])\$(?!\s)[^$\n]+?(?<!\s)\$(?!\d)/g;
+	pushAll(mathBlockRe);
+	pushAll(mathInlineRe);
+
 	return ranges;
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "pi-bionic-reading",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "A pi extension that applies bionic-reading-style fixation bolding to assistant prose in the TUI",
   "private": false,
   "type": "module",

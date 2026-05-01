@@ -276,3 +276,111 @@ describe("bionicifyMarkdown — emphasis preservation", () => {
 		expect(out).toContain("**f**oo");
 	});
 });
+
+describe("findPreservedRanges — math", () => {
+	it("identifies $$...$$ block math", () => {
+		const src = "before\n$$\nx = 1\n$$\nafter";
+		const ranges = findPreservedRanges(src);
+		const start = src.indexOf("$$");
+		const end = src.lastIndexOf("$$") + 2;
+		expect(ranges.some((r) => r.start === start && r.end === end)).toBe(true);
+	});
+
+	it("identifies block math spanning multiple lines", () => {
+		const src = "$$\n\\frac{a}{b} + \\sqrt{c}\n$$";
+		const ranges = findPreservedRanges(src);
+		expect(ranges.some((r) => r.start === 0 && r.end === src.length)).toBe(true);
+	});
+
+	it("identifies $...$ inline math", () => {
+		const src = "see $x = 5$ here";
+		const ranges = findPreservedRanges(src);
+		const start = src.indexOf("$x");
+		const end = src.indexOf("5$") + 2;
+		expect(ranges.some((r) => r.start === start && r.end === end)).toBe(true);
+	});
+
+	it("does not match currency-shaped $5 / $10 patterns as math", () => {
+		// Pandoc rule: closing `$` followed by a digit is rejected, so
+		// "buy at $5, save $10" stays prose.
+		const src = "buy at $5, save $10 today";
+		const ranges = findPreservedRanges(src);
+		// Neither dollar should anchor a preserved range.
+		const dollar1 = src.indexOf("$5");
+		const dollar2 = src.indexOf("$10");
+		expect(
+			ranges.every((r) => r.start !== dollar1 && r.start !== dollar2),
+		).toBe(true);
+	});
+
+	it("does not match $ with adjacent whitespace (Pandoc rule)", () => {
+		// Opening `$` followed by whitespace, OR closing `$` preceded by
+		// whitespace, is not math — prevents "a $ b $ c" from being captured.
+		const src = "a $ foo bar $ b";
+		const ranges = findPreservedRanges(src);
+		expect(ranges.every((r) => src.slice(r.start, r.end) !== "$ foo bar $")).toBe(true);
+	});
+
+	it("does not match escaped \\$ as the start of math", () => {
+		const src = "price was \\$5 yesterday and $x$ today";
+		const ranges = findPreservedRanges(src);
+		// The math span $x$ should be preserved…
+		const mathStart = src.indexOf("$x$");
+		expect(
+			ranges.some((r) => r.start === mathStart && r.end === mathStart + 3),
+		).toBe(true);
+		// …but the escaped \$5 must not anchor a preserved range.
+		const escapedStart = src.indexOf("\\$5") + 1;
+		expect(ranges.every((r) => r.start !== escapedStart)).toBe(true);
+	});
+});
+
+describe("bionicifyMarkdown — math preservation", () => {
+	it("does not transform $$...$$ block math", () => {
+		const src =
+			"Solve the quadratic:\n\n$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$\n\nwhere a, b, c are constants.";
+		const out = bionicifyMarkdown(src, { fixation: 3 });
+		expect(out).toContain("$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$");
+		// Surrounding prose still gets bionic-fied.
+		expect(out).toContain("**Sol**ve"); // "Solve" len 5 fix=3 → bold 3
+		expect(out).toContain("**quadr**atic"); // "quadratic" len 9 fix=3 → 5
+		expect(out).toContain("**const**ants"); // "constants" len 9 fix=3 → 5
+	});
+
+	it("does not transform $...$ inline math", () => {
+		const src = "Let $\\alpha + \\beta = \\gamma$ be given.";
+		const out = bionicifyMarkdown(src, { fixation: 3 });
+		expect(out).toContain("$\\alpha + \\beta = \\gamma$");
+		// LaTeX command tokens like \alpha must not get **…** wrapped.
+		expect(out).not.toMatch(/\*\*[a-z]*alpha/i);
+		expect(out).not.toMatch(/\*\*[a-z]*beta/i);
+		expect(out).not.toMatch(/\*\*[a-z]*gamma/i);
+		// Prose still transformed.
+		expect(out).toContain("**giv**en"); // "given" len 5 fix=3 → bold 3
+	});
+
+	it("preserves block math containing markdown-shaped tokens (no mangling)", () => {
+		// `**` and `_` inside math must not be peeled into bold/italic spans.
+		const src = "$$a**b**c + d_e_f$$";
+		const out = bionicifyMarkdown(src, { fixation: 3 });
+		expect(out).toBe("$$a**b**c + d_e_f$$");
+	});
+
+	it("leaves currency dollars in prose alone (still bionic-fies surrounding words)", () => {
+		const src = "It cost $5 and $10 today";
+		const out = bionicifyMarkdown(src, { fixation: 3 });
+		// Dollars survive verbatim.
+		expect(out).toContain("$5");
+		expect(out).toContain("$10");
+		// Surrounding words still get the bionic treatment.
+		expect(out).toContain("**tod**ay");
+	});
+
+	it("preserves multi-line block math verbatim", () => {
+		const src = "prefix\n\n$$\n\\begin{aligned}\nx &= 1 \\\\\ny &= 2\n\\end{aligned}\n$$\n\nsuffix";
+		const out = bionicifyMarkdown(src, { fixation: 3 });
+		expect(out).toContain("$$\n\\begin{aligned}\nx &= 1 \\\\\ny &= 2\n\\end{aligned}\n$$");
+		expect(out).toContain("**pre**fix");
+		expect(out).toContain("**suf**fix");
+	});
+});

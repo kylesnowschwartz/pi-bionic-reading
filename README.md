@@ -12,7 +12,7 @@ For each word in rendered assistant prose, the leading letters get wrapped in `*
 
 The Markdown component's `this.text` is left untouched, so subsequent LLM turns never see the `**…**` markers. Toggling on or off mid-session does not change stored conversation state.
 
-Code blocks, inline code spans, link URLs, autolinks, raw HTML, and link reference definitions are preserved verbatim. Only prose gets transformed.
+Code blocks, inline code spans, link URLs, autolinks, raw HTML, link reference definitions, and LaTeX math (`$…$` inline and `$$…$$` block) are preserved verbatim. Only prose gets transformed.
 
 Identifiers in prose (`useEffect`, `XMLParser`, `snake_case`) are split on case and underscore boundaries before bolding, so each sub-word gets its own fixation cue: `**u**se**Eff**ect`, `**X**ML**Par**ser`, `**sn**ake_**ca**se`. Hyphenated tokens stay whole by default to preserve English compounds like `**well**-known`.
 
@@ -55,6 +55,8 @@ Changes apply on the next render. Type a character or wait for the next assistan
 ## Configuration
 
 Create `~/.pi/bionic.jsonc` (user-level) or `<project>/.pi/bionic.jsonc` (project-level). Project values override user values.
+
+If `PI_CODING_AGENT_DIR` is set, the user-level file is read from `$PI_CODING_AGENT_DIR/bionic.jsonc` instead — next to `settings.json`, mirroring how the rest of pi treats the variable. The legacy `~/.pi/bionic.jsonc` path is kept when the variable is unset, so existing setups don't move.
 
 ```jsonc
 {
