@@ -27,7 +27,7 @@ pi install <path-to-this-directory>
 # or add the repo to ~/.pi/agent/extension-repos.json
 ```
 
-Once installed, bionic mode is on by default. Use `/bionic` or press `Ctrl+X` (configurable) to toggle it.
+Once installed, bionic mode is on by default. Use `/bionic` to toggle it. There is no default keybinding — set `hotkey` in `bionic.jsonc` if you want one (see *Configuration* below).
 
 ## Commands
 
@@ -46,7 +46,7 @@ Once installed, bionic mode is on by default. Use `/bionic` or press `Ctrl+X` (c
 | `/bionic style bold underline`   | Toggle multiple decorations in one call (each independently)        |
 | `/bionic style none`             | Force-clear all four decoration booleans                            |
 | `/bionic invert`                 | Toggle suffix-bolding: bold the *end* of each word instead of the start (prototype) |
-| `Ctrl+X` (hotkey)                | Toggle on/off (configurable, see below)                             |
+| Hotkey                           | Toggle on/off — **no default**, opt in via `hotkey` in `bionic.jsonc` |
 
 Color and style changes apply for the rest of the session only — they do **not** write to `bionic.jsonc`. See the *Slash commands vs. file persistence* section below.
 
@@ -105,12 +105,13 @@ If `PI_CODING_AGENT_DIR` is set, the user-level file is read from `$PI_CODING_AG
   // **bold** literals in assistant messages (the override targets theme.bold).
   "prefixStyle": { "color": "red", "bold": true },
 
-  // Hotkey to toggle bionic mode on/off. Same string format pi uses for
-  // keybindings (e.g. "ctrl+x", "ctrl+q", "f6"). Set to null or "" to
-  // disable. Conflicts with built-in pi shortcuts are reported and skipped.
+  // Hotkey to toggle bionic mode on/off. Default is `null` (no binding) —
+  // pick your own here. Same string format pi uses for keybindings (e.g.
+  // "ctrl+x", "ctrl+q", "f6"). Set to null or "" to leave disabled.
+  // Conflicts with built-in pi shortcuts are reported and skipped.
   // Note: pi-tui only supports ctrl/shift/alt modifiers — Cmd is unreachable
   // from a TTY on macOS, so "cmd+..." bindings will not work.
-  "hotkey": "ctrl+x",
+  "hotkey": null,
 
   // (Prototype) Pin the active theme kind. "auto" reads pi's configured
   // theme via ctx.ui.theme.name and re-layers the matching `themes` preset
@@ -180,7 +181,7 @@ into the previous session does not carry over.
 
 The `/bionic` toast (e.g. `[bionic] enabled (fixation 3)`) is your confirmation the binding fired.
 
-**Note on the default `ctrl+x`.** Recent pi versions bind `ctrl+x` to `app.models.clearAll` inside the model-selector overlay (opened with `Ctrl+L`). This is a *soft* conflict (`restrictOverride: false`): the runner logs `Extension shortcut conflict: 'ctrl+x' is built-in shortcut for app.models.clearAll …` at startup, then hands the binding to this extension.
+**Note on conflicts with pi built-ins.** If you choose a hotkey that pi already binds (`ctrl+l` opens the model selector, `ctrl+x` clears it inside that overlay, etc.), the runner reports a *soft* conflict (`restrictOverride: false`) at startup — it logs `Extension shortcut conflict: '<key>' is built-in shortcut for <action> …` and then hands the binding to this extension. The hotkey will work, but the corresponding pi action loses its keystroke; pick a different one if that matters to you.
 
 ## Algorithm credits
 

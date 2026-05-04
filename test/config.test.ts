@@ -21,7 +21,7 @@ describe("CONFIG_DEFAULTS", () => {
 			skipHeadings: false,
 			splitHyphenated: false,
 			invert: false,
-			hotkey: "ctrl+x",
+			hotkey: null,
 		});
 	});
 

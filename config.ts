@@ -77,8 +77,9 @@ export interface BionicReadingConfig {
 	 */
 	prefixStyle?: PrefixStyle;
 	/**
-	 * Hotkey to toggle bionic mode on/off. Defaults to `"ctrl+x"`.
-	 * Set to `null` or `""` to disable.
+	 * Hotkey to toggle bionic mode on/off. Defaults to `null` (no hotkey).
+	 * Set to a `KeyId` string (e.g. `"ctrl+x"`, `"f6"`) to opt in.
+	 * `null` and `""` both mean disabled.
 	 */
 	hotkey: BionicHotkey;
 	/**
@@ -105,7 +106,7 @@ export const CONFIG_DEFAULTS: BionicReadingConfig = {
 	...DEFAULT_OPTIONS,
 	enabled: true,
 	skipHeadings: false,
-	hotkey: "ctrl+x",
+	hotkey: null,
 };
 
 /** Strip JSONC comments and trailing commas, returning a parsed value. */
