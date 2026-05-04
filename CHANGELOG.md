@@ -5,6 +5,23 @@ All notable changes to `pi-bionic-reading` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026
+
+### Changed
+
+- **The default toggle hotkey is now unset.** `CONFIG_DEFAULTS.hotkey` flips
+  from `"ctrl+x"` to `null`, so a fresh install registers no shortcut at all.
+  Set `"hotkey": "ctrl+x"` (or any other `KeyId`) in `bionic.jsonc` to opt
+  back in. Motivation: `ctrl+x` collided softly with pi's built-in
+  `app.models.clearAll`, and any default we ship will collide with someone's
+  workflow — keybinding choice belongs to the user. The `/bionic` slash
+  command remains the always-available toggle.
+
+### Migration
+
+- Users who relied on the previous `ctrl+x` default and want to keep it: add
+  `"hotkey": "ctrl+x"` to `~/.pi/bionic.jsonc` (or `<project>/.pi/bionic.jsonc`).
+
 ## [0.4.2] — 2026
 
 ### Fixed
