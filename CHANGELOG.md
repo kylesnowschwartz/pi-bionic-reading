@@ -5,6 +5,52 @@ All notable changes to `pi-bionic-reading` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026
+
+### Added
+
+- **`/bionic saccade <N>` slash command** for live tuning of the saccade
+  parameter (bold every Nth word). Mirrors `/bionic 1..5` for fixation:
+  enables bionic mode if disabled, applies for the session only, no
+  persistence to `bionic.jsonc`. `N` MUST be a positive integer; `0`,
+  negatives, decimals, and non-numeric values are rejected at the parser
+  with a usage toast (the engine clamps `0` silently — the slash command
+  is strict so users learn the actual contract). No upper cap, matching
+  the engine's `Math.max(1, …)` semantics. Status toast surfaces
+  `· saccade N` when `N > 1`, between the `· inverted` segment and the
+  hotkey suffix; suppressed at the default `1` so the standard toggle
+  toast is unchanged.
+
+- **`/bionic headings` slash command** (alias: `/bionic skipheadings`) for
+  live toggling of the `skipHeadings` config field. Both spellings accepted
+  case-insensitively — `headings` is the natural slash-command name,
+  `skipheadings` matches the config key one-to-one for users who learned
+  the toggle from `bionic.jsonc`. No auto-enable (mirrors `/bionic invert`:
+  toggling a sub-behavior shouldn't force bionic on), no persistence to
+  `bionic.jsonc`. Status toast surfaces `· skipping headings` when on,
+  between the `· inverted` segment and the `· saccade N` segment.
+
+### Fixed
+
+- **`skipHeadings: true` now also restores host bold weight on heading
+  content.** Previously, `prefixStyle` overrode `theme.bold` render-wide via
+  `withPrefixStyleOverride`, which leaked into pi-tui's heading composition
+  (`theme.heading(theme.bold(text))`) — headings rendered with the user's
+  prefix style (e.g. `dim`) regardless of `skipHeadings`. The toggle only
+  gated bionic's own `**…**` injection, not the `theme.bold` override.
+  New `withHeadingRestore` helper patches `theme.heading` to strip the wrap
+  markers from its input and re-apply the host's original `theme.bold`,
+  composing with the existing prefix-style override. Active when both
+  `skipHeadings: true` and `prefixStyle` is configured. Skipped (no-op)
+  for the `ansi` raw-escape hatch — its close is the universal `\u001b[0m`
+  reset, which collides with closes from `theme.underline`, inline
+  `theme.code`, etc., and is unsafe to blind-strip. Inline `**bold**` inside
+  a heading is a known minor: its wrap gets stripped along with the
+  surrounding heading text and loses its weight distinction; headings rarely
+  contain inline bold. New `markers: { open, close, safeToStrip }` field on
+  `ResolvedPrefixStyle` and `StyleApplicationDecision` exposes the wrap's
+  ANSI substrings for consumers building strippers.
+
 ## [0.5.0] — 2026
 
 ### Changed
