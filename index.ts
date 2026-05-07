@@ -47,6 +47,7 @@ import {
 	applyToggleStyle,
 	decideStyleApplication,
 	resolvePrefixStyle,
+	withHeadingRestore,
 	withPrefixStyleOverride,
 } from "./prefix-style.js";
 import { augmentValidationWarning, parseBionicCommand } from "./commands.js";
@@ -93,6 +94,13 @@ interface PatchState {
 	 * to pick up `prefixStyle` mutations from future slash commands (S5).
 	 */
 	prefixWrap: ((text: string) => string) | null;
+	/**
+	 * The exact open / close ANSI substrings `prefixWrap` injects, alongside
+	 * a `safeToStrip` flag. Used by `withHeadingRestore` to undo the wrap on
+	 * heading content when `skipHeadings` is on. `null` when no prefix style
+	 * is configured (mirrors `prefixWrap === null`).
+	 */
+	prefixMarkers: { open: string; close: string; safeToStrip: boolean } | null;
 }
 
 type PatchableMarkdown = {
@@ -101,7 +109,7 @@ type PatchableMarkdown = {
 	cachedLines?: string[];
 	cachedWidth?: number;
 	/** pi-tui's `Markdown` declares this private; we mutate it for S4. */
-	theme?: { bold: (text: string) => string };
+	theme?: { bold: (text: string) => string; heading: (text: string) => string };
 };
 
 export default async function bionicReading(api: ExtensionAPI): Promise<void> {
@@ -137,6 +145,7 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 		baseConfig,
 		resolvedThemeKind: initialTheme.kind,
 		prefixWrap: resolved.wrap,
+		prefixMarkers: resolved.markers,
 	};
 	g[INSTANCE_KEY] = state;
 
@@ -166,6 +175,7 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 		state.resolvedThemeKind = next.kind;
 		state.config = next.config;
 		state.prefixWrap = next.prefixWrap;
+		state.prefixMarkers = next.prefixMarkers;
 		state.cache = new WeakMap();
 		for (const w of next.prefixWarnings) {
 			if (state.ctx) state.ctx.ui.notify(w, "warning");
@@ -222,10 +232,29 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 				// of this render so every `**…**` (including bionic prefixes) renders
 				// with the user's configured ANSI style. The override is restored
 				// even on throw (S4-AC4).
-				lines = withPrefixStyleOverride(
-					this.theme ?? { bold: (t: string) => t },
-					state.prefixWrap,
-					() => originalRender.call(this, width),
+				//
+				// When `skipHeadings` is on AND a structured prefix style is
+				// configured, ALSO patch `theme.heading` (via `withHeadingRestore`)
+				// so heading text — which pi-tui composes as
+				// `theme.heading(theme.bold(text))` — renders with the host's
+				// original bold weight instead of leaking our prefix style. Outer
+				// wrapper captures `originalBold` BEFORE the inner override installs,
+				// so the heading's re-bold step uses the host bold by reference.
+				const hostTheme = this.theme ?? {
+					bold: (t: string) => t,
+					heading: (t: string) => t,
+				};
+				const headingMarkers =
+					state.config.skipHeadings && state.prefixWrap
+						? state.prefixMarkers
+						: null;
+				lines = withHeadingRestore(
+					hostTheme,
+					headingMarkers,
+					() =>
+						withPrefixStyleOverride(hostTheme, state.prefixWrap, () =>
+							originalRender.call(this, width),
+						),
 				);
 			} finally {
 				this.text = originalText;
@@ -301,6 +330,7 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 		if (!decision.apply) return false;
 		state.config.prefixStyle = next;
 		state.prefixWrap = decision.wrap;
+		state.prefixMarkers = decision.markers;
 		return true;
 	};
 

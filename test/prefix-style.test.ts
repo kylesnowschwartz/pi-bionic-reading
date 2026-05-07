@@ -684,3 +684,232 @@ describe("decideStyleApplication", () => {
 		});
 	});
 });
+
+// =============================================================================
+// `markers` field on ResolvedPrefixStyle / StyleApplicationDecision
+// =============================================================================
+// Bridges `resolvePrefixStyle` and `withHeadingRestore`. Exposes the exact
+// open / close ANSI substrings the `wrap` function injects, alongside a
+// `safeToStrip` flag that is `false` only for the `ansi` raw-escape hatch
+// (whose close is the universal `\u001b[0m` reset — collides with closes from
+// theme.underline / inline theme.code / etc. and is unsafe to blind-strip).
+import { withHeadingRestore } from "../prefix-style.js";
+
+describe("resolvePrefixStyle markers field", () => {
+	it("is null when style is undefined", () => {
+		expect(resolvePrefixStyle(undefined).markers).toBeNull();
+	});
+
+	it("is null when style yields no codes (every field empty / falsy)", () => {
+		// Same path as the empty-codes wrap:null case — caller falls through
+		// to host theme.bold; markers null mirrors that.
+		expect(resolvePrefixStyle({}).markers).toBeNull();
+		expect(resolvePrefixStyle({ bold: false, dim: false }).markers).toBeNull();
+	});
+
+	it("exposes open + targeted close for structured styles, safeToStrip=true", () => {
+		const { wrap, markers } = resolvePrefixStyle({ dim: true });
+		expect(markers).not.toBeNull();
+		if (!markers) return; // narrowing
+		expect(markers.open).toBe("\u001b[2m");
+		expect(markers.close).toBe("\u001b[22m");
+		expect(markers.safeToStrip).toBe(true);
+		// Round-trip: wrap('x') === open + 'x' + close
+		expect(wrap?.("x")).toBe(`${markers.open}x${markers.close}`);
+	});
+
+	it("close is targeted (only the bits we opened) for color + dim combo", () => {
+		// Lock in S8-AC1/AC2/AC3 ordering: 39 (color), 22 (dim shares with bold).
+		const { markers } = resolvePrefixStyle({ color: "red", dim: true });
+		if (!markers) throw new Error("expected markers");
+		expect(markers.close).toBe("\u001b[39;22m");
+		expect(markers.safeToStrip).toBe(true);
+	});
+
+	it("safeToStrip is FALSE for the `ansi` raw-escape hatch", () => {
+		// Motivating reason: ansi's close is the universal `\u001b[0m`, which
+		// also closes theme.underline / inline theme.code / etc. on the same
+		// line. Stripping it indiscriminately corrupts non-bionic spans —
+		// `withHeadingRestore` honors this flag and falls through.
+		const { markers } = resolvePrefixStyle({ ansi: "\u001b[38;5;226;1m" });
+		if (!markers) throw new Error("expected markers");
+		expect(markers.open).toBe("\u001b[38;5;226;1m");
+		expect(markers.close).toBe("\u001b[0m");
+		expect(markers.safeToStrip).toBe(false);
+	});
+});
+
+describe("decideStyleApplication markers field", () => {
+	it("forwards markers from resolvePrefixStyle on apply", () => {
+		// applyPrefixStyle in index.ts reads `decision.markers` to keep
+		// `state.prefixMarkers` in sync with `state.prefixWrap`. Lock in the
+		// forwarding so a future StyleApplicationDecision shape change keeps
+		// markers attached.
+		const d = decideStyleApplication({ dim: true });
+		expect(d.apply).toBe(true);
+		expect(d.markers).not.toBeNull();
+		expect(d.markers?.open).toBe("\u001b[2m");
+		expect(d.markers?.close).toBe("\u001b[22m");
+		expect(d.markers?.safeToStrip).toBe(true);
+	});
+
+	it("markers null when style yields no codes", () => {
+		const d = decideStyleApplication({});
+		expect(d.markers).toBeNull();
+	});
+});
+
+// =============================================================================
+// withHeadingRestore
+// =============================================================================
+// Heading-aware patch that undoes the bionic `theme.bold` override on heading
+// content only. Caller invokes this OUTSIDE the bold override (so it captures
+// the host's original bold by reference), then runs the bold override + render
+// inside its callback. Heading text is reconstructed by stripping wrap markers
+// and re-applying the original bold + heading style.
+describe("withHeadingRestore", () => {
+	function makeTheme() {
+		return {
+			bold: (t: string) => `<<bold:${t}>>`,
+			heading: (t: string) => `<<heading:${t}>>`,
+		};
+	}
+
+	it("is a transparent pass-through when markers is null", () => {
+		const theme = makeTheme();
+		const originalHeading = theme.heading;
+		const out = withHeadingRestore(theme, null, () => {
+			expect(theme.heading).toBe(originalHeading); // not patched
+			return theme.heading("x");
+		});
+		expect(out).toBe("<<heading:x>>");
+		expect(theme.heading).toBe(originalHeading);
+	});
+
+	it("is a transparent pass-through when markers.safeToStrip is false (ansi escape)", () => {
+		// Ansi raw-escape hatch is opt-out: blind-stripping `\u001b[0m` would
+		// corrupt closes from theme.underline / inline theme.code / etc. on the
+		// same line. Honor the flag and don't patch.
+		const theme = makeTheme();
+		const originalHeading = theme.heading;
+		const markers = {
+			open: "\u001b[38;5;226;1m",
+			close: "\u001b[0m",
+			safeToStrip: false,
+		};
+		withHeadingRestore(theme, markers, () => {
+			expect(theme.heading).toBe(originalHeading);
+		});
+	});
+
+	it("strips wrap markers and re-applies original bold + heading", () => {
+		// Simulate pi-tui's heading composition: heading(bold(text)). With the
+		// override active, bold(x) === wrap(x) === open+x+close. So the input
+		// to theme.heading is already-wrapped. The patch should strip and
+		// rebold using the ORIGINAL bold (captured before the override).
+		const theme = makeTheme();
+		const markers = {
+			open: "<O>",
+			close: "<C>",
+			safeToStrip: true,
+		};
+		const result = withHeadingRestore(theme, markers, () => {
+			// Inside render: simulate the bold override being installed.
+			theme.bold = (t: string) => `${markers.open}${t}${markers.close}`;
+			// pi-tui calls heading(bold(text)) = patched_heading(<O>x<C>)
+			return theme.heading(theme.bold("hello"));
+		});
+		// patched heading strips <O>...<C> -> 'hello', then re-applies the
+		// ORIGINAL bold (captured before the test mutated theme.bold), then
+		// applies original heading.
+		expect(result).toBe("<<heading:<<bold:hello>>>>");
+	});
+
+	it("strips multiple non-overlapping wrap regions in the same heading line", () => {
+		// Real headings can have multiple theme.bold calls on a single line:
+		// pi-tui's renderInlineTokens calls bold() once per text segment plus
+		// once per inline `**bold**` token, all concatenated before heading()
+		// runs. The strip regex must be non-greedy to unfold each region
+		// independently — a greedy match would swallow text between regions.
+		const theme = makeTheme();
+		const markers = { open: "<O>", close: "<C>", safeToStrip: true };
+		const result = withHeadingRestore(theme, markers, () => {
+			// Two wrapped regions with text in between. The text in between
+			// should NOT be stripped — only the open/close markers themselves.
+			return theme.heading("<O>foo<C> middle <O>bar<C>");
+		});
+		expect(result).toBe("<<heading:<<bold:foo middle bar>>>>");
+	});
+
+	it("preserves non-wrap ANSI codes inside the heading (e.g. theme.underline closes)", () => {
+		// pi-tui's H1 composition is heading(bold(underline(text))) =
+		// patched_heading(<O> + UNDERLINE_OPEN + text + UNDERLINE_CLOSE + <C>).
+		// Stripping <O> and <C> must leave the underline codes untouched so
+		// pi-tui's underline styling survives the restore.
+		const theme = makeTheme();
+		const markers = { open: "<O>", close: "<C>", safeToStrip: true };
+		const result = withHeadingRestore(theme, markers, () => {
+			return theme.heading("<O>\u001b[4mtext\u001b[24m<C>");
+		});
+		expect(result).toBe("<<heading:<<bold:\u001b[4mtext\u001b[24m>>>>");
+	});
+
+	it("restores theme.heading after render completes", () => {
+		const theme = makeTheme();
+		const originalHeading = theme.heading;
+		const markers = { open: "<O>", close: "<C>", safeToStrip: true };
+		withHeadingRestore(theme, markers, () => {
+			expect(theme.heading).not.toBe(originalHeading); // patched inside
+		});
+		expect(theme.heading).toBe(originalHeading); // restored after
+	});
+
+	it("restores theme.heading even when render throws", () => {
+		// Mirrors withPrefixStyleOverride's S4-AC4 contract: an exception
+		// during render must not leak the patch into subsequent renders.
+		const theme = makeTheme();
+		const originalHeading = theme.heading;
+		const markers = { open: "<O>", close: "<C>", safeToStrip: true };
+		expect(() =>
+			withHeadingRestore(theme, markers, () => {
+				throw new Error("render exploded");
+			}),
+		).toThrow("render exploded");
+		expect(theme.heading).toBe(originalHeading);
+	});
+
+	it("captures originalBold by reference BEFORE the override is installed", () => {
+		// Critical contract: the caller MUST invoke withHeadingRestore OUTSIDE
+		// withPrefixStyleOverride. The patched heading reads `originalBold`
+		// from the closure at call time — it must point at the host bold, not
+		// the override. Verify by mutating theme.bold inside the render and
+		// confirming the patched heading still uses the captured original.
+		const theme = makeTheme();
+		const markers = { open: "<O>", close: "<C>", safeToStrip: true };
+		const result = withHeadingRestore(theme, markers, () => {
+			// Simulate withPrefixStyleOverride installing a `dim` override.
+			theme.bold = (t: string) => `<<DIM:${t}>>`;
+			return theme.heading("<O>x<C>");
+		});
+		// originalBold was the ORIGINAL `<<bold:...>>` function captured
+		// before the test mutated theme.bold, so the heading content reads
+		// `<<bold:x>>` not `<<DIM:x>>`.
+		expect(result).toBe("<<heading:<<bold:x>>>>");
+	});
+
+	it("escapes regex metacharacters in marker open / close strings", () => {
+		// Defensive: structured wraps emit `\u001b[Nm` which is fine, but a
+		// future raw-escape variant or a custom marker could include `[`, `(`,
+		// `*`, etc. — must be regex-escaped before use in `RegExp`.
+		const theme = makeTheme();
+		const markers = {
+			open: "[(*+?",
+			close: ")^$|",
+			safeToStrip: true,
+		};
+		const result = withHeadingRestore(theme, markers, () => {
+			return theme.heading("[(*+?content)^$|");
+		});
+		expect(result).toBe("<<heading:<<bold:content>>>>");
+	});
+});

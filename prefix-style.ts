@@ -26,6 +26,18 @@ export interface PrefixStyle {
 export interface ResolvedPrefixStyle {
 	/** Text-wrapping function, or null when the caller should fall through. */
 	wrap: ((text: string) => string) | null;
+	/**
+	 * The exact open / close ANSI substrings the wrap function injects, so
+	 * callers can build a stripper that undoes the wrap in specific contexts
+	 * (see `withHeadingRestore`). `null` mirrors `wrap === null`.
+	 *
+	 * `safeToStrip` is `false` for the `ansi` raw-escape hatch because its
+	 * close is the universal SGR reset (`\u001b[0m`), which collides with
+	 * other style functions' closes (`theme.underline`, inline `theme.code`,
+	 * etc.). For structured styles the close is a TARGETED SGR sequence that
+	 * is unique to our wrap and safe to blind-strip.
+	 */
+	markers: { open: string; close: string; safeToStrip: boolean } | null;
 	/** Human-readable warnings (e.g. invalid color value). Caller logs them. */
 	warnings: string[];
 }
@@ -144,13 +156,19 @@ function parseColor(value: string): ParsedColor {
 export function resolvePrefixStyle(
 	style: PrefixStyle | undefined,
 ): ResolvedPrefixStyle {
-	if (!style) return { wrap: null, warnings: [] };
+	if (!style) return { wrap: null, markers: null, warnings: [] };
 
 	// S4-AC2: raw ansi escape hatch wins, structured fields ignored.
 	if (style.ansi) {
 		const open = style.ansi;
 		return {
 			wrap: (text: string) => `${open}${text}${RESET}`,
+			// `safeToStrip: false` — the close is the universal `\u001b[0m`,
+			// which collides with closes emitted by other style functions inside
+			// the same line (e.g. theme.underline). Blind-stripping would corrupt
+			// non-bionic spans. `withHeadingRestore` honors this flag and falls
+			// through (no restore) when ansi escape hatch is in play.
+			markers: { open, close: RESET, safeToStrip: false },
 			warnings: [],
 		};
 	}
@@ -190,7 +208,7 @@ export function resolvePrefixStyle(
 	}
 
 	if (codes.length === 0) {
-		return { wrap: null, warnings };
+		return { wrap: null, markers: null, warnings };
 	}
 
 	// S8-AC1/AC2/AC3: build targeted close from only the bits we opened, in
@@ -206,6 +224,11 @@ export function resolvePrefixStyle(
 	const close = `\u001b[${closeCodes.join(";")}m`;
 	return {
 		wrap: (text: string) => `${open}${text}${close}`,
+		// `safeToStrip: true` — close is targeted (only turns off the bits we
+		// opened, e.g. `\u001b[39;22m`) and structurally distinct from any
+		// other style function's close. Safe for `withHeadingRestore` to
+		// blind-strip in heading content.
+		markers: { open, close, safeToStrip: true },
 		warnings,
 	};
 }
@@ -231,6 +254,81 @@ export function withPrefixStyleOverride<T>(
 		return render();
 	} finally {
 		theme.bold = original;
+	}
+}
+
+/** Escape regex metacharacters in a literal string for use inside `RegExp`. */
+function escapeRegex(s: string): string {
+	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * When `skipHeadings` is on AND a structured `prefixStyle` is configured,
+ * pi-tui's heading composition (`theme.heading(theme.bold(text))`) leaks our
+ * `theme.bold` override into the heading's visible weight — the user's `dim`,
+ * color, etc. lands on heading content, defeating the point of `skipHeadings`.
+ *
+ * This helper restores host-bold appearance for headings ONLY by patching
+ * `theme.heading` to:
+ *
+ *   1. Strip every `${markers.open}…${markers.close}` region from its input
+ *      (non-greedy regex so multiple occurrences in one heading line all
+ *      unfold). The input arrived ALREADY-WRAPPED because `theme.bold` ran
+ *      first under the active override.
+ *   2. Re-apply `originalBold` to the stripped text so the heading still
+ *      reads as bold (host weight, not the bionic prefix style).
+ *   3. Apply `originalHeading` to get the heading-specific styling (color,
+ *      size cue, etc.) on top.
+ *
+ * Skipped (transparent pass-through) when:
+ *   - `markers === null` (no prefix style configured), OR
+ *   - `markers.safeToStrip === false` (`prefixStyle.ansi` raw escape — its
+ *     close is the universal `\u001b[0m` reset which collides with closes
+ *     emitted by `theme.underline`, inline `theme.code`, etc. Blind-stripping
+ *     would corrupt non-bionic spans on the same line).
+ *
+ * Caller MUST invoke this OUTSIDE `withPrefixStyleOverride`'s render callback
+ * — it captures `theme.bold` as `originalBold` BEFORE the override is
+ * installed, so the re-apply step uses the host bold, not the override.
+ * The typical pattern is:
+ *
+ *     withHeadingRestore(theme, markers, () =>
+ *         withPrefixStyleOverride(theme, wrap, () => render()),
+ *     );
+ *
+ * Restoration of `theme.heading` is in a `finally` block so an exception
+ * during render does not leak the patch into subsequent renders (mirrors
+ * `withPrefixStyleOverride`'s S4-AC4 contract).
+ *
+ * Inline `**bold**` inside a heading is a known minor: its wrap gets stripped
+ * along with the heading's plain-text wraps, so the inner span loses its
+ * weight distinction relative to the rest of the heading. Headings rarely
+ * contain inline bold (which is redundant — headings are already bold);
+ * documenting this in README rather than complicating the strip.
+ */
+export function withHeadingRestore<T>(
+	theme: { bold: (text: string) => string; heading: (text: string) => string },
+	markers: { open: string; close: string; safeToStrip: boolean } | null,
+	render: () => T,
+): T {
+	if (!markers || !markers.safeToStrip) return render();
+	const originalHeading = theme.heading;
+	const originalBold = theme.bold;
+	const stripRe = new RegExp(
+		`${escapeRegex(markers.open)}([\\s\\S]*?)${escapeRegex(markers.close)}`,
+		"g",
+	);
+	theme.heading = (input: string): string => {
+		// Replace each wrap region with its inner content. `$1` is the captured
+		// text between open and close — ANSI codes from theme.underline / inline
+		// strong / etc. survive because they sit outside our wrap markers.
+		const stripped = input.replace(stripRe, "$1");
+		return originalHeading(originalBold(stripped));
+	};
+	try {
+		return render();
+	} finally {
+		theme.heading = originalHeading;
 	}
 }
 
@@ -296,6 +394,11 @@ export interface StyleApplicationDecision {
 	apply: boolean;
 	warnings: string[];
 	wrap: ((text: string) => string) | null;
+	/**
+	 * Wrap markers for `withHeadingRestore`. Mirrors `wrap === null` and
+	 * carries the same shape as `ResolvedPrefixStyle.markers`.
+	 */
+	markers: { open: string; close: string; safeToStrip: boolean } | null;
 }
 
 /**
@@ -316,5 +419,6 @@ export function decideStyleApplication(
 		apply: resolved.warnings.length === 0,
 		warnings: resolved.warnings,
 		wrap: resolved.wrap,
+		markers: resolved.markers,
 	};
 }

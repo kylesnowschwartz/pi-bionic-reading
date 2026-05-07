@@ -282,6 +282,12 @@ export interface LiveThemeFlip {
 	config: BionicReadingConfig;
 	/** Re-resolved prefix-style wrapper (or `null` to fall through). */
 	prefixWrap: ((text: string) => string) | null;
+	/**
+	 * The wrap's open / close ANSI markers, alongside `safeToStrip`. Mirrors
+	 * `prefixWrap === null` and is consumed by `withHeadingRestore` so a
+	 * theme flip keeps the heading-restore feature in sync with the new style.
+	 */
+	prefixMarkers: { open: string; close: string; safeToStrip: boolean } | null;
 	/** prefix-style validation warnings, one per malformed field. */
 	prefixWarnings: string[];
 }
@@ -317,6 +323,7 @@ export function applyLiveThemeName(
 		kind,
 		config,
 		prefixWrap: prefix.wrap,
+		prefixMarkers: prefix.markers,
 		prefixWarnings: prefix.warnings,
 	};
 }

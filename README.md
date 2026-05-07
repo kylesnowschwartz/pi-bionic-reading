@@ -105,6 +105,13 @@ If `PI_CODING_AGENT_DIR` is set, the user-level file is read from `$PI_CODING_AG
   //
   // Side-effect: while bionic is on, this style also applies to user-authored
   // **bold** literals in assistant messages (the override targets theme.bold).
+  // For ATX heading content, that side-effect is suppressed when
+  // `skipHeadings: true` AND `prefixStyle` uses structured fields (color /
+  // bold / dim / italic / underline) — headings render with the host's
+  // original bold weight instead of leaking your prefix style. Suppression
+  // is opt-out for the `ansi` raw-escape hatch (its close `\u001b[0m`
+  // collides with closes from theme.underline / inline theme.code / etc.,
+  // so blind-stripping is unsafe; ansi mode behaves the same as before).
   "prefixStyle": { "color": "red", "bold": true },
 
   // Hotkey to toggle bionic mode on/off. Default is `null` (no binding) —
