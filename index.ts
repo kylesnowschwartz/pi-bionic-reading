@@ -254,9 +254,20 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 		// `/bionic invert` actually flipped state. Slotted between base and
 		// hotkey so the hotkey hint stays the rightmost dot-separated suffix.
 		const withInvert = cfg.invert ? `${base} · inverted` : base;
+		// Surface skipHeadings only when on, so the standard toggle toast
+		// stays unchanged for users who never touch headings.
+		const withSkipHeadings = cfg.skipHeadings
+			? `${withInvert} · skipping headings`
+			: withInvert;
+		// Surface saccade only when non-default (> 1) so the standard toggle
+		// toast stays unchanged for users who never touch saccade.
+		const withSaccade =
+			cfg.saccade > 1
+				? `${withSkipHeadings} · saccade ${cfg.saccade}`
+				: withSkipHeadings;
 		// Suffix with the active hotkey so users see what binding to press next.
 		// Suppressed when no hotkey is configured to avoid `· ` dangling suffix.
-		return cfg.hotkey ? `${withInvert} · ${cfg.hotkey}` : withInvert;
+		return cfg.hotkey ? `${withSaccade} · ${cfg.hotkey}` : withSaccade;
 	};
 
 	// Toggle bionic on/off and notify. Shared between the /bionic command and
@@ -296,7 +307,7 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 	// /bionic — dispatch over the parser in `commands.ts` (S5).
 	api.registerCommand("bionic", {
 		description:
-			"Bionic reading: /bionic [on|off|toggle|1..5|color <value>|style <tokens>]",
+			"Bionic reading: /bionic [on|off|toggle|1..5|invert|headings|color <value>|style <tokens>|saccade <N>]",
 		handler: async (rawArgs: string, ctx: ExtensionCommandContext) => {
 			const cmd = parseBionicCommand(rawArgs);
 
@@ -313,6 +324,13 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 					// Setting fixation also enables, matching pre-S5 behavior (S5-AC5).
 					state.config.enabled = true;
 					state.config.fixation = cmd.value;
+					break;
+
+				case "set-saccade":
+					// Mirror set-fixation: tuning a parameter implies the user
+					// wants bionic on, so don't make them issue a separate /bionic on.
+					state.config.enabled = true;
+					state.config.saccade = cmd.value;
 					break;
 
 				case "set-color": {
@@ -348,6 +366,14 @@ export default async function bionicReading(api: ExtensionAPI): Promise<void> {
 					// Prototype: flip suffix-bolding mode. No persistence to
 					// bionic.jsonc — mirrors S5-AC6 (slash commands are session-only).
 					state.config.invert = !state.config.invert;
+					break;
+				}
+
+				case "toggle-skip-headings": {
+					// Flip the skipHeadings config field. Mirrors toggle-invert:
+					// no auto-enable (toggling a sub-behavior shouldn't force bionic
+					// on), no persistence to bionic.jsonc.
+					state.config.skipHeadings = !state.config.skipHeadings;
 					break;
 				}
 

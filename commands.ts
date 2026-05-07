@@ -17,6 +17,7 @@ export type BionicCommand =
 	| { kind: "toggle" }
 	| { kind: "set-enabled"; value: boolean }
 	| { kind: "set-fixation"; value: Fixation }
+	| { kind: "set-saccade"; value: number }
 	| { kind: "set-color"; value: string }
 	/** Toggle each named field; dispatcher consults state (S6-AC5). */
 	| { kind: "toggle-style"; fields: StyleField[] }
@@ -26,9 +27,20 @@ export type BionicCommand =
 	| { kind: "clear-color" }
 	/** Toggle the `invert` config field (`/bionic invert`). */
 	| { kind: "toggle-invert" }
+	/** Toggle the `skipHeadings` config field (`/bionic headings` or `/bionic skipheadings`). */
+	| { kind: "toggle-skip-headings" }
 	| { kind: "usage"; message: string };
 
 const FIXATION_RE = /^[1-5]$/;
+/**
+ * Saccade accepts any positive integer (no upper cap). The engine
+ * (`bionic.ts`) clamps to >= 1 via `Math.max(1, ...)` and uses the value
+ * directly in `wordIndex % saccade`, so non-integers and zero/negatives
+ * produce nonsense at runtime — reject at the parser instead. Unlike
+ * `fixation` (capped 1..5 because the engine has a 5-row table), saccade
+ * has no engine-side maximum.
+ */
+const SACCADE_RE = /^[1-9]\d*$/;
 const STYLE_TOKENS = ["bold", "dim", "italic", "underline"] as const;
 
 /**
@@ -64,9 +76,11 @@ export const NAMED_COLOR_HINT = `named colors: ${Object.keys(NAMED_COLORS).join(
 // the cryptic `[...]` POSIX repetition mark — the latter reads as ellipsis to
 // most users and obscures the multi-token affordance (`/bionic style bold underline`).
 const USAGE_TOPLEVEL =
-	"[bionic] /bionic: unknown subcommand; valid options: on|off|toggle|1..5|invert|color <value>|style <tokens>";
+	"[bionic] /bionic: unknown subcommand; valid options: on|off|toggle|1..5|invert|headings|color <value>|style <tokens>|saccade <N>";
 const USAGE_COLOR = `[bionic] /bionic color: missing or invalid value; valid options: ${COLOR_OPTIONS}; ${NAMED_COLOR_HINT}`;
 const USAGE_STYLE = `[bionic] /bionic style: missing or invalid token; valid options: ${STYLE_OPTIONS} (one or more, space-separated)`;
+const USAGE_SACCADE =
+	"[bionic] /bionic saccade: missing or invalid value; valid options: <N> (positive integer; 1 = every word, 2 = alternate, ...)";
 
 export function parseBionicCommand(rawArgs: string): BionicCommand {
 	const trimmed = rawArgs.trim();
@@ -106,6 +120,26 @@ export function parseBionicCommand(rawArgs: string): BionicCommand {
 		return rest === ""
 			? { kind: "toggle-invert" }
 			: { kind: "usage", message: USAGE_TOPLEVEL };
+	}
+
+	// `/bionic headings` (or `/bionic skipheadings`) — toggle skipHeadings.
+	// Both forms accepted because `headings` is the natural slash-command
+	// name but `skipheadings` matches the config key (`skipHeadings`) one-to-one,
+	// so users who learned the toggle from `bionic.jsonc` can type either.
+	// Subcommand is already lowercased above; that handles every case mix.
+	if (subcommand === "headings" || subcommand === "skipheadings") {
+		return rest === ""
+			? { kind: "toggle-skip-headings" }
+			: { kind: "usage", message: USAGE_TOPLEVEL };
+	}
+
+	// `/bionic saccade <N>` — bold every Nth word. N MUST be a positive
+	// integer; reject 0, negatives, decimals, and any extra args.
+	if (subcommand === "saccade") {
+		if (rest === "") return { kind: "usage", message: USAGE_SACCADE };
+		if (/\s/.test(rest)) return { kind: "usage", message: USAGE_SACCADE };
+		if (!SACCADE_RE.test(rest)) return { kind: "usage", message: USAGE_SACCADE };
+		return { kind: "set-saccade", value: parseInt(rest, 10) };
 	}
 
 	// `/bionic color <value>` (S5-AC1) or `/bionic color none` (clear).

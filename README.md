@@ -46,6 +46,8 @@ Once installed, bionic mode is on by default. Use `/bionic` to toggle it. There 
 | `/bionic style bold underline`   | Toggle multiple decorations in one call (each independently)        |
 | `/bionic style none`             | Force-clear all four decoration booleans                            |
 | `/bionic invert`                 | Toggle suffix-bolding: bold the *end* of each word instead of the start (prototype) |
+| `/bionic headings`               | Toggle `skipHeadings` (whether `# Foo` lines get the bionic transform). Alias: `/bionic skipheadings`. Case-insensitive on both spellings. |
+| `/bionic saccade <N>`            | Bold every Nth word (`1` = every word, `2` = alternate, ...). Enables if disabled. |
 | Hotkey                           | Toggle on/off — **no default**, opt in via `hotkey` in `bionic.jsonc` |
 
 Color and style changes apply for the rest of the session only — they do **not** write to `bionic.jsonc`. See the *Slash commands vs. file persistence* section below.

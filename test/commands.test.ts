@@ -324,6 +324,154 @@ describe("parseBionicCommand", () => {
 			}
 		});
 	});
+
+	describe("`/bionic saccade <N>` — bold every Nth word", () => {
+		// Saccade is documented in bionic.jsonc and exists in the engine, but
+		// previously had no live form. The slash command lets users tune it
+		// per session without restarting pi (mirrors `/bionic` 1..5 for fixation).
+		it('"saccade 1" → set-saccade 1 (default density)', () => {
+			expect(parseBionicCommand("saccade 1")).toEqual({
+				kind: "set-saccade",
+				value: 1,
+			});
+		});
+
+		it('"saccade 2" → set-saccade 2 (alternate words)', () => {
+			expect(parseBionicCommand("saccade 2")).toEqual({
+				kind: "set-saccade",
+				value: 2,
+			});
+		});
+
+		it('"saccade 10" → set-saccade 10 (no upper cap; engine accepts any positive int)', () => {
+			// Unlike fixation (1..5, hard-capped by the engine's 5-row table),
+			// saccade has no engine-side maximum — `wordIndex % saccade` works
+			// for any positive integer. Lock that in: high values parse, even
+			// if they're rarely useful.
+			expect(parseBionicCommand("saccade 10")).toEqual({
+				kind: "set-saccade",
+				value: 10,
+			});
+		});
+
+		it("case-insensitive on the subcommand (Saccade / SACCADE)", () => {
+			expect(parseBionicCommand("Saccade 2")).toEqual({
+				kind: "set-saccade",
+				value: 2,
+			});
+			expect(parseBionicCommand("SACCADE 3")).toEqual({
+				kind: "set-saccade",
+				value: 3,
+			});
+		});
+
+		it('"saccade" with no arg → usage', () => {
+			const r = parseBionicCommand("saccade");
+			expect(r.kind).toBe("usage");
+			if (r.kind === "usage") {
+				expect(r.message).toContain("/bionic saccade");
+				expect(r.message).toMatch(/positive integer|<N>/);
+			}
+		});
+
+		it('"saccade 0" → usage (engine clamps but parser is strict)', () => {
+			// `bionic.ts` does `Math.max(1, opts.saccade)` so 0 silently becomes 1
+			// at the engine. Reject at the parser instead so the user sees a
+			// rejection toast and learns the actual contract (1 = every word).
+			expect(parseBionicCommand("saccade 0").kind).toBe("usage");
+		});
+
+		it('"saccade -1" → usage (negatives rejected)', () => {
+			expect(parseBionicCommand("saccade -1").kind).toBe("usage");
+		});
+
+		it('"saccade 1.5" → usage (decimals rejected)', () => {
+			// `wordIndex % 1.5` would produce non-integer modulo results, which
+			// is meaningless for index alignment. Reject decimals at the parser.
+			expect(parseBionicCommand("saccade 1.5").kind).toBe("usage");
+		});
+
+		it('"saccade abc" → usage (non-numeric rejected)', () => {
+			expect(parseBionicCommand("saccade abc").kind).toBe("usage");
+		});
+
+		it('"saccade 2 extra" → usage (no extra args)', () => {
+			// Mirrors `color red extra` rejection: extras are rejected so the
+			// command isn't silently truncating user input.
+			expect(parseBionicCommand("saccade 2 extra").kind).toBe("usage");
+		});
+
+		it("top-level usage message advertises `saccade`", () => {
+			// Discoverability: an unknown subcommand should list saccade among
+			// the valid forms so users find it without grepping the README.
+			const r = parseBionicCommand("unknown");
+			expect(r.kind).toBe("usage");
+			if (r.kind === "usage") {
+				expect(r.message).toContain("saccade");
+			}
+		});
+	});
+
+	describe("`/bionic headings` / `/bionic skipheadings` — toggle skipHeadings", () => {
+		// Two accepted spellings: `headings` is the natural slash-command name,
+		// `skipheadings` matches the config key (`skipHeadings`) one-to-one. Both
+		// flow through the same `toggle-skip-headings` action; the dispatcher
+		// flips the boolean.
+		it('"headings" → toggle-skip-headings', () => {
+			expect(parseBionicCommand("headings")).toEqual({
+				kind: "toggle-skip-headings",
+			});
+		});
+
+		it('"skipheadings" → toggle-skip-headings (config-key alias)', () => {
+			expect(parseBionicCommand("skipheadings")).toEqual({
+				kind: "toggle-skip-headings",
+			});
+		});
+
+		it("case-insensitive on both spellings", () => {
+			// Subcommand is lowercased before matching, so every case mix should
+			// produce the same action. Covers Headings, HEADINGS, SkipHeadings,
+			// SKIPHEADINGS, and the camelCase config-key spelling.
+			for (const form of [
+				"Headings",
+				"HEADINGS",
+				"hEaDiNgS",
+				"SkipHeadings",
+				"SKIPHEADINGS",
+				"skipHeadings",
+				"SkIpHeAdInGs",
+			]) {
+				expect(parseBionicCommand(form)).toEqual({
+					kind: "toggle-skip-headings",
+				});
+			}
+		});
+
+		it('"headings <anything>" → usage (no args accepted)', () => {
+			// Mirrors `/bionic invert` extras rejection: toggle takes no payload,
+			// so reject `headings on` etc. instead of silently dropping the arg.
+			expect(parseBionicCommand("headings on").kind).toBe("usage");
+			expect(parseBionicCommand("headings true").kind).toBe("usage");
+			expect(parseBionicCommand("headings garbage").kind).toBe("usage");
+		});
+
+		it('"skipheadings <anything>" → usage (alias also rejects extras)', () => {
+			expect(parseBionicCommand("skipheadings on").kind).toBe("usage");
+			expect(parseBionicCommand("skipheadings false").kind).toBe("usage");
+		});
+
+		it("top-level usage message advertises `headings`", () => {
+			// Discoverability: an unknown subcommand should list headings among
+			// the valid forms. We advertise the shorter spelling only — the
+			// `skipheadings` alias is for users who already know the config key.
+			const r = parseBionicCommand("unknown");
+			expect(r.kind).toBe("usage");
+			if (r.kind === "usage") {
+				expect(r.message).toContain("headings");
+			}
+		});
+	});
 });
 
 // =============================================================================
