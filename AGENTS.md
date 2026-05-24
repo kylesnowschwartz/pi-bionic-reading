@@ -88,7 +88,14 @@ When the user says "ready to share":
 1. List commits since the last release: `git log --oneline <last-tag-or-version>..HEAD`.
 2. Decide the bump: any `feat:` → minor; only `fix:` / `refactor:` / `chore:`
    → patch.
-3. Edit `package.json` `version` field.
+3. Bump the version: `npm version <patch|minor|major> --no-git-tag-version`.
+   This updates `package.json` and `package-lock.json` in lockstep — do not
+   hand-edit `package.json`'s `version` field, or the lockfile's embedded
+   `version` will drift and every downstream `npm install` will re-create
+   the diff (a `version` mismatch shows up as a dirty `package-lock.json`
+   in pi's cached clone for any user who installed via `pi install`).
+   `--no-git-tag-version` keeps npm from creating its own commit/tag so
+   the change folds into the single `chore: release` commit below.
 4. Add a new `## [N.N.N] — YYYY` section to `CHANGELOG.md` above the
    previous release, populated from the commit list.
 5. Verification gate: `npm run typecheck && npm test`.
