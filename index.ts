@@ -1,7 +1,7 @@
 /**
  * pi-bionic-reading — entry point.
  *
- * Monkey-patches `Markdown.prototype.render` from `@mariozechner/pi-tui` so
+ * Monkey-patches `Markdown.prototype.render` from `@earendil-works/pi-tui` so
  * that, when enabled, every Markdown component renders with the bionic
  * transform applied to its source text. The original message text in
  * `this.text` is left unmodified, which means:
@@ -30,8 +30,8 @@ import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
-import { Markdown } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { Markdown } from "@earendil-works/pi-tui";
 import { type Fixation } from "./bionic.js";
 import {
 	applyLiveThemeName,

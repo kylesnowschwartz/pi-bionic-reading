@@ -18,13 +18,13 @@ import { readFile } from "node:fs/promises";
 import { parse as parseJsoncLib } from "jsonc-parser";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { KeyId } from "@mariozechner/pi-tui";
+import type { KeyId } from "@earendil-works/pi-tui";
 import { DEFAULT_OPTIONS, type Fixation } from "./bionic.js";
 import { resolvePrefixStyle, type PrefixStyle } from "./prefix-style.js";
 
 /**
  * Hotkey identifier (e.g. "ctrl+x", "ctrl+q", "f6"). Same string format pi
- * uses for keybindings; see `KeyId` in `@mariozechner/pi-tui`. Set to `null`
+ * uses for keybindings; see `KeyId` in `@earendil-works/pi-tui`. Set to `null`
  * (or empty string) to disable the hotkey entirely.
  *
  * pi-tui only recognises `ctrl`, `shift`, and `alt` modifiers — there is no

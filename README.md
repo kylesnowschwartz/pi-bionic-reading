@@ -18,7 +18,7 @@ Identifiers in prose (`useEffect`, `XMLParser`, `snake_case`) are split on case 
 
 ## Status
 
-v0.1. The implementation is a monkey-patch over `Markdown.prototype.render` from `@mariozechner/pi-tui`. It works against the current pi version with no upstream changes. The plan is to upstream a `registerTextRenderer` hook in `pi-coding-agent` so the patch is no longer needed.
+v0.1. The implementation is a monkey-patch over `Markdown.prototype.render` from `@earendil-works/pi-tui`. It works against the current pi version with no upstream changes. The plan is to upstream a `registerTextRenderer` hook in `pi-coding-agent` so the patch is no longer needed.
 
 ## Install
 
